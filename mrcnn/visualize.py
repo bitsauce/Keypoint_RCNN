@@ -141,7 +141,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             class_id = class_ids[i]
             score = scores[i] if scores is not None else None
             label = class_names[class_id]
-            x = random.randint(x1, (x1 + x2) // 2)
+            #x = random.randint(x1, (x1 + x2) // 2)
             caption = "{} {:.3f}".format(label, score) if score else label
         else:
             caption = captions[i]
@@ -168,6 +168,90 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     if auto_show:
         plt.show()
 
+def display_keypoints(image, boxes, masks, per_person_class_ids, class_names,
+                      skeleton=None, scores=None, title="",
+                      figsize=(16, 16), ax=None,
+                      show_keypoints=True, show_bbox=True,
+                      colors=None):
+    """
+    boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
+    masks: [height, width, num_instances]
+    per_person_class_ids: list of [num_instances] per instance
+    class_names: list of class names of the dataset
+    scores: (optional) confidence scores for each box
+    title: (optional) Figure title
+    show_keypoints, show_bbox: To show masks and bounding boxes or not
+    figsize: (optional) the size of the image
+    colors: (optional) An array of colors to use with each object
+    """
+    # Number of instances
+    num_boxes = boxes.shape[0]
+    num_masks = masks.shape[-1]
+    if not num_masks:
+        print("\n*** No instances to display *** \n")
+    else:
+        assert masks.shape[-1] == sum([per_person_class_ids[i].shape[0] for i in range(len(per_person_class_ids))])
+
+    # If no axis is passed, create one and automatically call show()
+    auto_show = False
+    if not ax:
+        _, ax = plt.subplots(1, figsize=figsize)
+        auto_show = True
+
+    # Generate random colors
+    colors = colors or random_colors(max(num_masks, num_boxes))
+
+    # Show area outside image boundaries.
+    height, width = image.shape[:2]
+    ax.set_ylim(height + 10, -10)
+    ax.set_xlim(-10, width + 10)
+    ax.axis('off')
+    ax.set_title(title)
+
+    masked_image = image.astype(np.uint32).copy()
+    for i in range(num_boxes):
+        color = colors[i]
+
+        # Bounding box
+        if not np.any(boxes[i]):
+            # Skip this instance. Has no bbox. Likely lost in image cropping.
+            continue
+        y1, x1, y2, x2 = boxes[i]
+        if show_bbox:
+            p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                                alpha=0.7, linestyle="dashed",
+                                edgecolor=color, facecolor='none')
+            ax.add_patch(p)
+
+    # Keypoints
+    if show_keypoints:
+        j = 0
+        for i, class_ids in enumerate(per_person_class_ids):
+            color = colors[i]
+            if len(class_ids) > 0:
+                # Get keypoint positions given binary masks
+                x = np.zeros((17))
+                y = np.zeros((17))
+                v = np.zeros((17)) # visibility
+                for class_id in class_ids:
+                    kpy, kpx = np.unravel_index(np.argmax(masks[:, :, j], axis=None), masks.shape[:2])
+                    x[class_id-1] = kpx
+                    y[class_id-1] = kpy
+                    v[class_id-1] = 1
+                    j += 1
+
+                # Draw skeleton if provided
+                if skeleton != None:
+                    sks = np.array(skeleton)-1
+                    for sk in sks:
+                        if np.all(v[sk] > 0):
+                            plt.plot(x[sk],y[sk], linewidth=3, color=color)
+                ax.plot(x[v>0], y[v>0], 'o', markersize=8, markerfacecolor=color, markeredgecolor='k', markeredgewidth=2)
+                ax.plot(x[v>0], y[v>0], 'o', markersize=8, markerfacecolor=color, markeredgecolor=color, markeredgewidth=2)
+
+    ax.imshow(masked_image.astype(np.uint8))
+    if auto_show:
+        plt.show()
 
 def display_differences(image,
                         gt_box, gt_class_id, gt_mask,
