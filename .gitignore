@@ -1,6 +1,7 @@
 # Data files and directories common in repo root
 datasets/
 data/
+pycocotools/
 logs/
 *.h5
 results/

@@ -205,7 +205,7 @@ class CocoDataset(utils.Dataset):
             print("... done unzipping")
         print("Will use annotations in " + annFile)
 
-    def load_mask(self, image_id):
+    def load_mask(self, image_id, flatten_class_ids=True):
         """Loads the binary masks for each keypoint in the image.
 
         Returns:
@@ -244,12 +244,13 @@ class CocoDataset(utils.Dataset):
 
                         kp_masks.append(mask)
                         class_ids.append(class_id)
-            per_instance_class_ids.append(np.array(class_ids, dtype=np.int32))
+            if class_ids:
+                per_instance_class_ids.append(np.array(class_ids, dtype=np.int32))
 
         # Pack instance masks into an array
         if per_instance_class_ids:
             mask = np.stack(kp_masks, axis=2).astype(np.bool)
-            return mask, per_instance_class_ids
+            return mask, np.concatenate(per_instance_class_ids) if flatten_class_ids else per_instance_class_ids
         else:
             # Call super class to return an empty mask
             mask = np.empty([0, 0, 0])
