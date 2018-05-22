@@ -252,10 +252,10 @@ class CocoDataset(utils.Dataset):
             mask = np.stack(kp_masks, axis=2).astype(np.bool)
             return mask, np.concatenate(per_instance_class_ids) if flatten_class_ids else per_instance_class_ids
         else:
-            # Call super class to return an empty mask
+            # Return an empty mask
             mask = np.empty([0, 0, 0])
             class_ids = np.empty([0], np.int32)
-            return mask, [class_ids]
+            return mask, np.array([class_ids]) if flatten_class_ids else [class_ids]
 
     def load_bbox(self, image_id):
         """Load instance bounding box for the given image.
