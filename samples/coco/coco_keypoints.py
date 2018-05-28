@@ -110,13 +110,21 @@ class CocoDataset(utils.Dataset):
             subset = "val"
         image_dir = "{}/{}{}".format(dataset_dir, subset, year)
 
+
+        # Background is always the first class
+        self.kp_class_info = [{"source": "", "id": 0, "name": "MISSING"}]
+        self.kp_source_class_ids = {}
+
         # All person images
         image_ids = list(coco.getImgIds(catIds=[1]))
 
+        # Add person class
+        self.add_class("coco", 1, "person")
+
         # Add keypoint classes
-        self.keypoint_names = coco.loadCats(1)[0]["keypoints"]
-        for i, kpname in enumerate(self.keypoint_names):
-            self.add_class("coco", i+1, kpname)
+        keypoint_names = coco.loadCats(1)[0]["keypoints"]
+        for i, kpname in enumerate(keypoint_names):
+            self.add_kp_class("coco", i+1, kpname)
 
         # Store skeleton (for visualization)
         self.skeleton = coco.loadCats(1)[0]["skeleton"]
@@ -205,59 +213,72 @@ class CocoDataset(utils.Dataset):
             print("... done unzipping")
         print("Will use annotations in " + annFile)
 
-    def load_mask(self, image_id, flatten_class_ids=True):
+    def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None, verify_size=True):
         """Loads the binary masks for each keypoint in the image.
 
         Returns:
-        masks: A bool array of shape [height, width, instance count] with
-            one mask per key.
-        class_ids: a 1D array of class IDs of the instance masks.
+        kp_masks: A bool array of shape [person_count, height, width, kp_count] with
+            a one-mask per keypoint.
+        kp_ids: an array of shape [person_count, kp_count] of keypoint IDs
+            of the each person's keypoints.
         """
         # If not a COCO image, delegate to parent class.
         image_info = self.image_info[image_id]
         if image_info["source"] != "coco":
             return super(CocoDataset, self).load_mask(image_id)
-
+        
         kp_masks = []
-        per_instance_class_ids = []
+        kp_ids = []
         annotations = self.image_info[image_id]["annotations"]
+
+        if crop: raise Exception("Crop not supported")
+
+        # Calculate mask size
+        pad_top, pad_bot, pad_left, pad_right = padding[0][0], padding[0][1], padding[1][0], padding[1][1]
+        mask_size = (int(round(image_info["height"] * scale) + pad_top + pad_bot),
+                     int(round(image_info["width"] * scale) + pad_left + pad_right))
+
+        if verify_size and (mask_size[0] != 1024 or mask_size[1] != 1024):
+            print("padding:",padding)
+            print("scale:",scale)
+            print("mask_size:",mask_size)
+            raise Exception("Wrong maks size")
+
         # Build mask of shape [height, width, instance_count] and list
         # of class IDs that correspond to each channel of the mask.
         for annotation in annotations:
-            class_ids = []
-
             # Get keypoint positions
             kps = np.array(annotation["keypoints"])
             x = kps[0::3]
             y = kps[1::3]
             v = kps[2::3]
-            for kpidx in range(len(self.keypoint_names)):
+            masks = []
+            ids = []
+            for kpidx in range(1, self.num_kp_classes+1):
+                mask = np.zeros(mask_size, dtype=bool)
+                kp_id = 0
+                
                 # Consider only annotated keypoints
-                if v[kpidx] > 0:
-                    class_id = self.map_source_class_id("coco.{}".format(kpidx + 1))
-                    if class_id:
-                        mask = np.zeros((image_info["height"], image_info["width"]), dtype=bool)
-                        mask[y[kpidx], x[kpidx]] = True
+                if v[kpidx - 1] > 0:
+                    kp_id = self.kp_map_source_class_id("coco.{}".format(kpidx))
+                    if kp_id:
+                        mask[int(round(y[kpidx - 1] * scale) + pad_top), int(round(x[kpidx - 1] * scale) + pad_left)] = True
+                masks.append(mask)
+                ids.append(kp_id)
+            kp_masks.append(masks)
+            kp_ids.append(ids)
 
-                        # Is it a crowd? If so, use a negative class ID.
-                        #if annotation["iscrowd"]: class_id *= -1
-
-                        kp_masks.append(mask)
-                        class_ids.append(class_id)
-            if class_ids:
-                per_instance_class_ids.append(np.array(class_ids, dtype=np.int32))
-
-        # Pack instance masks into an array
-        if per_instance_class_ids:
-            mask = np.stack(kp_masks, axis=2).astype(np.bool)
-            return mask, np.concatenate(per_instance_class_ids) if flatten_class_ids else per_instance_class_ids
+        if kp_ids:
+            # Append masks and kp ids
+            kp_masks =  np.transpose(np.array(kp_masks).astype(np.bool), [0, 2, 3, 1])
+            kp_ids = np.array(kp_ids)
         else:
-            # Return an empty mask
-            mask = np.empty([0, 0, 0])
-            class_ids = np.empty([0], np.int32)
-            return mask, np.array([class_ids]) if flatten_class_ids else [class_ids]
+            # Append an empty mask
+            kp_masks = np.empty([0, 0, 0, 0])
+            kp_ids = np.empty([0], np.int32)
+        return np.array(kp_masks), np.array(kp_ids)
 
-    def load_bbox(self, image_id):
+    def load_bbox(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None):
         """Load instance bounding box for the given image.
 
         Returns:
@@ -272,17 +293,14 @@ class CocoDataset(utils.Dataset):
         instance_bboxes = []
         annotations = self.image_info[image_id]["annotations"]
 
+        # Get padding
+        pad_top, pad_left = padding[0][0], padding[1][0]
+
         # Build mask of shape [height, width, instance_count] and list
         # of class IDs that correspond to each channel of the mask.
         for annotation in annotations:
             x, y, w, h = annotation["bbox"]
-            bbox = np.array([y, x, y + h, x + w])
-
-            # Some objects are so small that they"re less than 1 pixel area
-            # and end up rounded out. Skip those objects.
-            if bbox.max() < 1:
-                continue
-
+            bbox = np.array([pad_top + y * scale, pad_left + x *scale, pad_top + (y + h) * scale, pad_left + (x + w) * scale])
             instance_bboxes.append(bbox)
 
         # Pack instance masks into an array
@@ -299,6 +317,67 @@ class CocoDataset(utils.Dataset):
             return "http://cocodataset.org/#explore?id={}".format(info["id"])
         else:
             super(CocoDataset, self).image_reference(image_id)
+
+                # The following two functions are from pycocotools with a few changes.
+    
+    def add_kp_class(self, source, kp_id, class_name):
+        assert "." not in source, "Source name cannot contain a dot"
+
+        # Does the class exist already?
+        for info in self.kp_class_info:
+            if info['source'] == source and info["id"] == kp_id:
+                # source.class_id combination already available, skip
+                return
+
+        # Add the class
+        self.kp_class_info.append({
+            "source": source,
+            "id": kp_id,
+            "name": class_name,
+        })
+
+    def kp_map_source_class_id(self, source_class_id):
+        """Takes a source class ID and returns the int class ID assigned to it.
+
+        For example:
+        dataset.kp_map_source_class_id("coco.12") -> 23
+        """
+        return self.kp_class_from_source_map[source_class_id]
+
+    def prepare(self, class_map=None):
+        super(CocoDataset, self).prepare(class_map)
+        
+        """Prepares the Dataset class for use.
+
+        TODO: class map is not supported yet. When done, it should handle mapping
+              classes from different datasets to the same class ID.
+        """
+
+        def clean_name(name):
+            """Returns a shorter version of object names for cleaner display."""
+            return ",".join(name.split(",")[:1])
+
+        # Build (or rebuild) everything else from the info dicts.
+        self.num_kp_classes = len(self.kp_class_info) - 1
+        self.kp_class_ids = np.arange(self.num_kp_classes + 1)
+        self.kp_class_names = [clean_name(c["name"]) for c in self.kp_class_info]
+
+        # Mapping from source class and image IDs to internal IDs
+        self.kp_class_from_source_map = { "{}.{}".format(info['source'], info['id']): id
+                                          for info, id in zip(self.kp_class_info, self.kp_class_ids) }
+
+        # Map sources to class_ids they support
+        self.kp_sources = list(set([i['source'] for i in self.kp_class_info]))
+        self.kp_source_class_ids = {}
+
+        # Loop over datasets
+        for source in self.kp_sources:
+            self.kp_source_class_ids[source] = []
+            # Find classes that belong to this dataset
+            for i, info in enumerate(self.kp_class_info):
+                # Include BG class in all datasets
+                if i == 0 or source == info['source']:
+                    self.kp_source_class_ids[source].append(i)
 
 ############################################################
 #  COCO Evaluation
