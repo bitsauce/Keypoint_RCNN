@@ -213,7 +213,7 @@ class CocoDataset(utils.Dataset):
             print("... done unzipping")
         print("Will use annotations in " + annFile)
 
-    def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None, verify_size=True):
+    def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None, verify_size=False):
         """Loads the binary masks for each keypoint in the image.
 
         Returns:

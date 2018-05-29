@@ -1277,7 +1277,8 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
 
     # DEBUG: Sanity check
     for k in range(kp_masks.shape[-1]):
-        assert(np.sum(kp_masks[:, :, k]) <= 1)
+        if np.sum(kp_masks[:, :, k]) > 1:
+            raise Exception("Image with ID %i produced a mask with np.sum(mask) > 1 " % image_id)
 
     return image, image_meta, class_ids, bbox, kp_masks, kp_ids
 
