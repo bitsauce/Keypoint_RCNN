@@ -263,6 +263,8 @@ class CocoDataset(utils.Dataset):
                     kp_id = self.kp_map_source_class_id("coco.{}".format(kpidx))
                     if kp_id:
                         mask[int(round(y[kpidx - 1] * scale) + pad_top), int(round(x[kpidx - 1] * scale) + pad_left)] = True
+                if np.sum(mask) > 1:
+                    raise Exception("What..")
                 masks.append(mask)
                 ids.append(kp_id)
             kp_masks.append(masks)

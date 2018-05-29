@@ -1254,9 +1254,8 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     # Bounding boxes. Note that some boxes might be all zeros
     # if the corresponding mask got cropped out.
     # bbox: [num_instances, (y1, x1, y2, x2)]
-    bbox = dataset.load_bbox(image_id, scale, padding, crop) # TODO: Could use this, but hard to compute new bb after resize
+    bbox = dataset.load_bbox(image_id, scale, padding, crop)
     class_ids = np.full((bbox.shape[0]), 1, dtype=np.int32)
-    #bbox = utils.extract_bboxes(instance_masks)
 
     # Active classes
     # Different datasets have different classes, so track the
@@ -1276,9 +1275,11 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
                                     window, scale, active_class_ids)
 
     # DEBUG: Sanity check
-    for k in range(kp_masks.shape[-1]):
-        if np.sum(kp_masks[:, :, k]) > 1:
-            raise Exception("Image with ID %i produced a mask with np.sum(mask) > 1 " % image_id)
+    for j in range(kp_masks.shape[0]):
+        for k in range(kp_masks.shape[-1]):
+            mask_sum = np.sum(kp_masks[j, :, :, k])
+            if mask_sum > 1:
+                raise Exception("Image with ID %i produced a mask with np.sum(mask) = %.2f > 1 " % (image_id, mask_sum))
 
     return image, image_meta, class_ids, bbox, kp_masks, kp_ids
 
