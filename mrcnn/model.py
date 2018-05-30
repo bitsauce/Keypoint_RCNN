@@ -488,7 +488,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
                be zero padded if there are not enough proposals.
     gt_class_ids: [MAX_GT_INSTANCES] int class IDs
     gt_boxes: [MAX_GT_INSTANCES, (y1, x1, y2, x2)] in normalized coordinates.
-    gt_masks: [height, width, MAX_GT_INSTANCES] of boolean type.
+    gt_masks: [MAX_GT_INSTANCES, num_keypoints] of boolean type.
 
     Returns: Target ROIs and corresponding class IDs, bounding box shifts,
     and masks.
@@ -496,7 +496,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     class_ids: [TRAIN_ROIS_PER_IMAGE]. Integer class IDs. Zero padded.
     deltas: [TRAIN_ROIS_PER_IMAGE, NUM_CLASSES, (dy, dx, log(dh), log(dw))]
             Class-specific bbox refinements.
-    masks: [TRAIN_ROIS_PER_IMAGE, height, width). Masks cropped to bbox
+    masks: [TRAIN_ROIS_PER_IMAGE, num_keypoints]. Masks cropped to bbox
            boundaries and resized to neural network output size.
 
     Note: Returned arrays might be zero padded if not enough target ROIs.
@@ -540,9 +540,11 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
 
     # Determine postive and negative ROIs
     roi_iou_max = tf.reduce_max(overlaps, axis=1)
+    
     # 1. Positive ROIs are those with >= 0.5 IoU with a GT box
     positive_roi_bool = (roi_iou_max >= 0.5)
     positive_indices = tf.where(positive_roi_bool)[:, 0]
+    
     # 2. Negative ROIs are those with < 0.5 with every GT box. Skip crowds.
     negative_indices = tf.where(tf.logical_and(roi_iou_max < 0.5, no_crowd_bool))[:, 0]
 
@@ -552,10 +554,12 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
                          config.ROI_POSITIVE_RATIO)
     positive_indices = tf.random_shuffle(positive_indices)[:positive_count]
     positive_count = tf.shape(positive_indices)[0]
+    
     # Negative ROIs. Add enough to maintain positive:negative ratio.
     r = 1.0 / config.ROI_POSITIVE_RATIO
     negative_count = tf.cast(r * tf.cast(positive_count, tf.float32), tf.int32) - positive_count
     negative_indices = tf.random_shuffle(negative_indices)[:negative_count]
+
     # Gather selected ROIs
     positive_rois = tf.gather(proposals, positive_indices)
     negative_rois = tf.gather(proposals, negative_indices)
@@ -576,33 +580,27 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     #transposed_masks = tf.expand_dims(tf.transpose(gt_masks, [2, 0, 1]), -1)
 
     # Pick the right mask for each ROI
+    # [TRAIN_ROIS_PER_IMAGE, num_keypoints]
     roi_masks = tf.gather(gt_masks, roi_gt_box_assignment)
 
     # Compute mask targets
     boxes = positive_rois
-    if config.USE_MINI_MASK:
-        # Transform ROI corrdinates from normalized image space
-        # to normalized mini-mask space.
-        y1, x1, y2, x2 = tf.split(positive_rois, 4, axis=1)
-        gt_y1, gt_x1, gt_y2, gt_x2 = tf.split(roi_gt_boxes, 4, axis=1)
-        gt_h = gt_y2 - gt_y1
-        gt_w = gt_x2 - gt_x1
-        y1 = (y1 - gt_y1) / gt_h
-        x1 = (x1 - gt_x1) / gt_w
-        y2 = (y2 - gt_y1) / gt_h
-        x2 = (x2 - gt_x1) / gt_w
-        boxes = tf.concat([y1, x1, y2, x2], 1)
     box_ids = tf.range(0, tf.shape(roi_masks)[0])
-    masks = tf.image.crop_and_resize(tf.cast(roi_masks, tf.float32), boxes,
-                                     box_ids,
-                                     config.MASK_SHAPE)
+    #masks = tf.image.crop_and_resize(tf.cast(roi_masks, tf.float32), boxes,
+    #                                 box_ids,
+    #                                 config.MASK_SHAPE)
 
-    # Remove the extra dimension from masks.
-    #masks = tf.squeeze(masks, axis=3)
+    #tf.multiply(roi_masks[:, ])
+    # [2, TRAIN_ROIS_PER_IMAGE, num_keypoints]
+    sparse_masks = tf.unravel_index(roi_masks, config.IMAGE_SHAPE[:2])
+    print("sparse_masks.shape", sparse_masks.shape)
+    print("sparse_masks.dtype", sparse_masks.dtype)
+    print("boxes.shape", boxes.shape)
+    print("boxes.dtype", boxes.dtype)
+    mask_indices_2d = tf.cast(sparse_masks, tf.float32) - boxes[:, 0:2]
+    masks = tf.cast(tf.multiply(tf.divide(mask_indices_2d, boxes[:, 0]), config.MASK_SHAPE[0]), tf.int32)
 
-    # Threshold mask pixels at 0.5 to have GT masks be 0 or 1 to use with
-    # binary cross entropy loss.
-    masks = tf.round(masks)
+    print("masks.shape", masks.shape)
 
     # Append negative ROIs and pad bbox deltas and masks that
     # are not used for negative ROIs with zeros.
@@ -672,8 +670,7 @@ class DetectionTargetLayer(KE.Layer):
             (None, 1),  # class_ids
             (None, self.config.NUM_KEYPOINTS), # kp_ids
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0],
-             self.config.MASK_SHAPE[1], self.config.NUM_KEYPOINTS)  # masks
+            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_KEYPOINTS)  # masks
         ]
 
     def compute_mask(self, inputs, mask=None):
@@ -1037,6 +1034,7 @@ def rpn_class_loss_graph(rpn_match, rpn_class_logits):
     # Pick rows that contribute to the loss and filter out the rest.
     rpn_class_logits = tf.gather_nd(rpn_class_logits, indices)
     anchor_class = tf.gather_nd(anchor_class, indices)
+
     # Crossentropy loss
     loss = K.sparse_categorical_crossentropy(target=anchor_class,
                                              output=rpn_class_logits,
@@ -1192,6 +1190,8 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, target_kp_ids, pred_ma
     print("pred_masks.shape", pred_masks.shape)
     print("y_true.shape", y_true.shape)
     print("y_pred.shape", y_pred.shape)
+    print("y_true.dtype", y_true.dtype)
+    print("y_pred.dtype", y_pred.dtype)
 
     # Flatten ys
     #y_shape = tf.shape(y_true)
@@ -1202,7 +1202,7 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, target_kp_ids, pred_ma
     # shape: [batch, roi, num_classes]
     loss = K.switch(tf.size(y_true) > 0,
                     #tf.nn.softmax_cross_entropy_with_logits(labels=y_pred, logits=y_true),
-                    K.categorical_crossentropy(target=y_true, output=y_pred),
+                    K.categorical_crossentropy(target=y_true, output=y_pred, from_logits=True),
                     #K.binary_crossentropy(target=y_true, output=y_pred),
                     tf.constant(0.0))
     print("loss", loss)
@@ -1214,8 +1214,7 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, target_kp_ids, pred_ma
 #  Data Generator
 ############################################################
 
-def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
-                  use_mini_mask=False):
+def load_image_gt(dataset, config, image_id, augment=False, augmentation=None):
     """Load and return ground truth data for an image (image, mask, bounding boxes).
 
     augment: (Depricated. Use augmentation instead). If true, apply random
@@ -1223,20 +1222,15 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     augmentation: Optional. An imgaug (https://github.com/aleju/imgaug) augmentation.
         For example, passing imgaug.augmenters.Fliplr(0.5) flips images
         right/left 50% of the time.
-    use_mini_mask: If False, returns full-size masks that are the same height
-        and width as the original image. These can be big, for example
-        1024x1024x100 (for 100 instances). Mini masks are smaller, typically,
-        224x224 and are generated by extracting the bounding box of the
-        object and resizing it to MINI_MASK_SHAPE.
 
     Returns:
     image: [height, width, 3]
     shape: the original shape of the image before resizing and cropping.
     class_ids: [instance_count] Integer class IDs
     bbox: [instance_count, (y1, x1, y2, x2)]
-    mask: [height, width, instance_count]. The height and width are those
-        of the image unless use_mini_mask is True, in which case they are
-        defined in MINI_MASK_SHAPE.
+    mask: [instance_count, num_keypoints]. For every instance
+        return num_keypoints sparse masks representing
+        the 1D position of the keypoint location
     """
     # Load image and mask
     image = dataset.load_image(image_id)
@@ -1266,10 +1260,6 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     source_class_ids = dataset.source_class_ids[dataset.image_info[image_id]["source"]]
     active_class_ids[source_class_ids] = 1
 
-    # Resize masks to smaller size to reduce memory usage
-    if use_mini_mask:
-        kp_masks = utils.minimize_mask(bbox, kp_masks, config.MINI_MASK_SHAPE)
-
     # Image meta data
     image_meta = compose_image_meta(image_id, original_shape, image.shape,
                                     window, scale, active_class_ids)
@@ -1281,7 +1271,17 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
             if mask_sum > 1:
                 raise Exception("Image with ID %i produced a mask with np.sum(mask) = %.2f > 1 " % (image_id, mask_sum))
 
-    return image, image_meta, class_ids, bbox, kp_masks, kp_ids
+    # Turn mask into sparse vector
+    sparse_masks = []
+    for j in range(kp_masks.shape[0]):
+        masks = kp_masks[j]
+        sparse_mask = []
+        for k in range(kp_masks.shape[-1]):
+            kpy, kpx = np.unravel_index(np.argmax(masks[:, :, k], axis=None), masks.shape[0:2])
+            sparse_mask.append(kpx + kpy * kp_masks.shape[1])
+        sparse_masks.append(sparse_mask)
+
+    return image, image_meta, class_ids, bbox, np.array(sparse_masks, dtype=np.int32), kp_ids
 
 
 def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks, config):
@@ -1293,8 +1293,7 @@ def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks, config):
     rpn_rois: [N, (y1, x1, y2, x2)] proposal boxes.
     gt_class_ids: [instance count] Integer class IDs
     gt_boxes: [instance count, (y1, x1, y2, x2)]
-    gt_masks: [height, width, instance count] Grund truth masks. Can be full
-              size or mini-masks.
+    gt_masks: [height, width, instance count] Grund truth sparse masks.
 
     Returns:
     rois: [TRAIN_ROIS_PER_IMAGE, (y1, x1, y2, x2)]
@@ -1417,20 +1416,6 @@ def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks, config):
         assert class_id > 0, "class id must be greater than 0"
         gt_id = roi_gt_assignment[i]
         class_mask = gt_masks[:, :, gt_id]
-
-        if config.USE_MINI_MASK:
-            # Create a mask placeholder, the size of the image
-            placeholder = np.zeros(config.IMAGE_SHAPE[:2], dtype=bool)
-            # GT box
-            gt_y1, gt_x1, gt_y2, gt_x2 = gt_boxes[gt_id]
-            gt_w = gt_x2 - gt_x1
-            gt_h = gt_y2 - gt_y1
-            # Resize mini mask to size of GT box
-            placeholder[gt_y1:gt_y2, gt_x1:gt_x2] = \
-                np.round(skimage.transform.resize(
-                    class_mask, (gt_h, gt_w), order=1, mode="constant")).astype(bool)
-            # Place the mini batch in the placeholder
-            class_mask = placeholder
 
         # Pick part of the mask and resize it
         y1, x1, y2, x2 = rois[i].astype(np.int32)
@@ -1657,9 +1642,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
     - rpn_bbox: [batch, N, (dy, dx, log(dh), log(dw))] Anchor bbox deltas.
     - gt_class_ids: [batch, MAX_GT_INSTANCES] Integer class IDs
     - gt_boxes: [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)]
-    - gt_masks: [batch, height, width, MAX_GT_INSTANCES]. The height and width
-                are those of the image unless use_mini_mask is True, in which
-                case they are defined in MINI_MASK_SHAPE.
+    - gt_masks: [batch, MAX_GT_INSTANCES, num_keypoints]
 
     outputs list: Usually empty in regular training. But if detection_targets
         is True then the outputs list contains target class_ids, bbox deltas,
@@ -1691,8 +1674,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             image_id = image_ids[image_index]
             image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp_ids = \
                 load_image_gt(dataset, config, image_id, augment=augment,
-                              augmentation=augmentation,
-                              use_mini_mask=config.USE_MINI_MASK)
+                              augmentation=augmentation)
 
             # Skip images that have no instances. This can happen in cases
             # where we train on a subset of classes and the image doesn't
@@ -1730,8 +1712,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 batch_gt_boxes = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_masks = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES,
-                     gt_masks.shape[1], gt_masks.shape[2], gt_masks.shape[3]), dtype=gt_masks.dtype)
+                    (batch_size, config.MAX_GT_INSTANCES, gt_masks.shape[1]), dtype=gt_masks.dtype)
                 if random_rois:
                     batch_rpn_rois = np.zeros(
                         (batch_size, rpn_rois.shape[0], 4), dtype=rpn_rois.dtype)
@@ -1762,7 +1743,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             batch_gt_kp_ids[b, :gt_kp_ids.shape[0]] = gt_kp_ids
             batch_gt_boxes[b, :gt_boxes.shape[0]] = gt_boxes
-            batch_gt_masks[b, :gt_masks.shape[0], :, :, :gt_masks.shape[-1]] = gt_masks
+            batch_gt_masks[b, :gt_masks.shape[0]] = gt_masks
             if random_rois:
                 batch_rpn_rois[b] = rpn_rois
                 if detection_targets:
@@ -1858,11 +1839,11 @@ class MaskRCNN():
             input_gt_class_ids = KL.Input(
                 shape=[None], name="input_gt_class_ids", dtype=tf.int32)
 
-            # Keypoint ids
+            # 2. Keypoint ids
             input_gt_kp_ids = KL.Input(
                 shape=[None, config.NUM_KEYPOINTS], name="input_gt_kp_ids", dtype=tf.int32)
 
-            # 2. GT Boxes in pixels (zero padded)
+            # 3. GT Boxes in pixels (zero padded)
             # [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)] in image coordinates
             input_gt_boxes = KL.Input(
                 shape=[None, 4], name="input_gt_boxes", dtype=tf.float32)
@@ -1871,17 +1852,11 @@ class MaskRCNN():
             gt_boxes = KL.Lambda(lambda x: norm_boxes_graph(
                 x, K.shape(input_image)[1:3]))(input_gt_boxes)
 
-            # 3. GT Masks (zero padded)
-            # [batch, height, width, MAX_GT_INSTANCES]
-            if config.USE_MINI_MASK:
-                input_gt_masks = KL.Input(
-                    shape=[config.MINI_MASK_SHAPE[0],
-                           config.MINI_MASK_SHAPE[1], None],
-                    name="input_gt_masks", dtype=bool)
-            else:
-                input_gt_masks = KL.Input(
-                    shape=[None, config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1], config.NUM_KEYPOINTS],
-                    name="input_gt_masks", dtype=bool)
+            # 4. GT Masks (zero padded)
+            # [batch, MAX_GT_INSTANCES, num_keypoints]
+            input_gt_masks = KL.Input(
+                shape=[None, config.NUM_KEYPOINTS],
+                name="input_gt_masks", dtype=tf.int32)
         elif mode == "inference":
             # Anchors in normalized coordinates
             input_anchors = KL.Input(shape=[None, 4], name="input_anchors")

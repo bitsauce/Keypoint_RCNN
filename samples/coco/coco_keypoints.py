@@ -272,7 +272,7 @@ class CocoDataset(utils.Dataset):
 
         if kp_ids:
             # Append masks and kp ids
-            kp_masks =  np.transpose(np.array(kp_masks).astype(np.bool), [0, 2, 3, 1])
+            kp_masks = np.transpose(np.array(kp_masks).astype(np.bool), [0, 2, 3, 1])
             kp_ids = np.array(kp_ids)
         else:
             # Append an empty mask
