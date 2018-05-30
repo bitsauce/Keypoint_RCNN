@@ -125,6 +125,7 @@ class CocoDataset(utils.Dataset):
         keypoint_names = coco.loadCats(1)[0]["keypoints"]
         for i, kpname in enumerate(keypoint_names):
             self.add_kp_class("coco", i+1, kpname)
+            break
 
         # Store skeleton (for visualization)
         self.skeleton = coco.loadCats(1)[0]["skeleton"]
