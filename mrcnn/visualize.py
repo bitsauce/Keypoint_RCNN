@@ -174,9 +174,8 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
                       show_keypoints=True, show_bbox=True,
                       colors=None):
     """
-    boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
-    masks: A one-hot bool mask of shape
-        [num_persons, height, width, num_keypoint].
+    boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates
+    masks: [num_persons, num_keypoints, height, width] one-hot bool masks
     kp_ids (optional): A 1D array of keypoint IDs of the each mask
         [num_persons, num_keypoints]
     scores: (optional) confidence scores for each box
@@ -186,9 +185,6 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
     colors: (optional) An array of colors to use with each object
     """
     
-    # Transpose into [num_persons, num_keypoints, width, height]
-    masks = np.transpose(masks, [0, 3, 1, 2])
-
     # Number of instances
     num_persons = masks.shape[0]
     num_keypoints = masks.shape[1]

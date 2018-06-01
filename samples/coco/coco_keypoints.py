@@ -93,7 +93,7 @@ class CocoConfig(Config):
 
 class CocoDataset(utils.Dataset):
     def load_coco(self, dataset_dir, subset, year=DEFAULT_DATASET_YEAR, 
-                  return_coco=False, auto_download=False):
+                  return_coco=False, auto_download=False, keypoints_to_include=None):
         """Load a subset of the COCO dataset.
         dataset_dir: The root directory of the COCO dataset.
         subset: What to load (train, val, minival, valminusminival)
@@ -124,8 +124,9 @@ class CocoDataset(utils.Dataset):
         # Add keypoint classes
         keypoint_names = coco.loadCats(1)[0]["keypoints"]
         for i, kpname in enumerate(keypoint_names):
-            self.add_kp_class("coco", i+1, kpname)
-            break
+            if keypoints_to_include is None or \
+               kpname in keypoints_to_include:
+                self.add_kp_class("coco", i+1, kpname)
 
         # Store skeleton (for visualization)
         self.skeleton = coco.loadCats(1)[0]["skeleton"]
@@ -255,30 +256,28 @@ class CocoDataset(utils.Dataset):
             v = kps[2::3]
             masks = []
             ids = []
-            for kpidx in range(1, self.num_kp_classes+1):
-                mask = np.zeros(mask_size, dtype=bool)
-                kp_id = 0
-                
-                # Consider only annotated keypoints
-                if v[kpidx - 1] > 0:
-                    kp_id = self.kp_map_source_class_id("coco.{}".format(kpidx))
-                    if kp_id:
-                        mask[int(round(y[kpidx - 1] * scale) + pad_top), int(round(x[kpidx - 1] * scale) + pad_left)] = True
-                if np.sum(mask) > 1:
-                    raise Exception("What..")
-                masks.append(mask)
-                ids.append(kp_id)
+            for kp_id, kp_info in enumerate(self.kp_class_info):
+                if kp_info["source"] == "coco":
+                    kp_coco_id = kp_info["id"]
+                    mask = np.zeros(mask_size, dtype=bool)
+                    
+                    # Consider only annotated keypoints
+                    if kp_coco_id and v[kp_coco_id - 1] > 0:
+                        mask[int(round(y[kp_coco_id - 1] * scale) + pad_top), int(round(x[kp_coco_id - 1] * scale) + pad_left)] = True
+
+                    masks.append(mask)
+                    ids.append(kp_id)
             kp_masks.append(masks)
             kp_ids.append(ids)
 
         if kp_ids:
             # Append masks and kp ids
-            kp_masks =  np.transpose(np.array(kp_masks).astype(np.bool), [0, 2, 3, 1])
-            kp_ids = np.array(kp_ids)
+            kp_masks = np.array(kp_masks).astype(np.bool)
+            kp_ids   = np.array(kp_ids)
         else:
             # Append an empty mask
             kp_masks = np.empty([0, 0, 0, 0])
-            kp_ids = np.empty([0], np.int32)
+            kp_ids   = np.empty([0], np.int32)
         return np.array(kp_masks), np.array(kp_ids)
 
     def load_bbox(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None):
