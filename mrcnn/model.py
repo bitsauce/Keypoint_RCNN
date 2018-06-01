@@ -587,12 +587,16 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
 
     # Crop input masks to MASK_SHAPE
     # Get kp x, y location
-    # [N, NUM_KEYPOINTS, IMAGE_SIZE]
-    kps_yx = tf.unravel_index(kps_1d_indices, mask_shape[2:]) #tf.argmax(gt_masks, axis=2, output_type=tf.int32)
-    kps_y = tf.reshape(kps_yx[0], (mask_shape[0], mask_shape[1], -1))
-    kps_x = tf.reshape(kps_yx[1], (mask_shape[0], mask_shape[1], -1))
+    # [N, NUM_KEYPOINTS, height x width]
+    # kps_yx = tf.unravel_index(kps_1d_indices, mask_shape[2:]) #tf.argmax(gt_masks, axis=2, output_type=tf.int32)
+    # i = 0
+    # x, y = i // width, i % width
+    kps_y = tf.mod(kps_1d_indices, mask_shape[1])
+    kps_x = tf.floor_div(kps_1d_indices, mask_shape[1])
+    kps_y = tf.reshape(kps_y, (mask_shape[0], mask_shape[1], -1))
+    kps_x = tf.reshape(kps_x, (mask_shape[0], mask_shape[1], -1))
     #kps_x = #tf.argmax(gt_masks, axis=3, output_type=tf.int32)
-    print("kps_yx.shape", kps_yx.shape)
+    #print("kps_yx.shape", kps_yx.shape)
     print("kps_x.shape", kps_x.shape)
 
     # [N, (y1, x1, y2, x2)]
@@ -602,21 +606,23 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     print("kps_x.shape", kps_x.shape)
 
     # Calculate corresponding position in resized mask
-    # [N, NUM_KEYPOINTS, IMAGE_SIZE]
+    # [N, NUM_KEYPOINTS, height x width]
     resized_kps_y = tf.cast((kps_y / (boxes[:, 0] - boxes[:, 2])) * config.MASK_SHAPE[0], tf.uint8)
     resized_kps_x = tf.cast((kps_x / (boxes[:, 1] - boxes[:, 3])) * config.MASK_SHAPE[1], tf.uint8)
 
     print("resized_kps_x.shape", resized_kps_x.shape)
 
     # Find 1D location in mask
-    # [N, 13]
-    kps_indices = resized_kps_x + resized_kps_y * config.MASK_SHAPE[0]
+    # [N, NUM_KEYPOINTS, height x width]
+    kps_indices = resized_kps_x + resized_kps_y * config.MASK_SHAPE[1]
     print("kps_indices.shape", kps_indices.shape)
 
     # Create one hot mask from unraveled and resized x, y
-    # [N, NUM_KEYPOINTS, height, width]
+    # [N, NUM_KEYPOINTS, height x width]
     masks = tf.one_hot(kps_indices, config.MASK_SHAPE[0] * config.MASK_SHAPE[1])
     print("masks.shape", masks.shape)
+
+    # [N, NUM_KEYPOINTS, height, width]
     masks = tf.reshape(masks, (-1, config.NUM_KEYPOINTS, config.MASK_SHAPE[0], config.MASK_SHAPE[1]))
     print("masks.shape", masks.shape)
 
