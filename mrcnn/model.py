@@ -1181,7 +1181,7 @@ def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
                 with values from 0 to 1.
     """
     
-    DEBUG = True
+    DEBUG = False
     if DEBUG:
         # Assertions
         mask_sums = tf.reshape(tf.reduce_sum(target_masks, axis=[3, 4]), (-1,))
