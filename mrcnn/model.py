@@ -1274,9 +1274,9 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None):
     image: [height, width, 3]
     shape: the original shape of the image before resizing and cropping.
     class_ids: [instance_count] Integer class IDs
+    kp_ids: [instance_count, num_keypoints] Integer kp IDs
     bbox: [instance_count, (y1, x1, y2, x2)]
-    mask: [height, width, instance_count]. The height and width are those
-        of the image.
+    sparse_mask: [instance_count, num_keypoints]. One-hot, sparse masks
     """
     # Load image and mask
     image = dataset.load_image(image_id)
@@ -1310,15 +1310,32 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None):
     image_meta = compose_image_meta(image_id, original_shape, image.shape,
                                     window, scale, active_class_ids)
 
-    # DEBUG: Sanity check
+    # Turn mask into sparse vector
+    sparse_masks = []
+    for j in range(kp_masks.shape[0]):
+        masks = kp_masks[j]
+        sparse_mask = []
+        for k in range(kp_masks.shape[-1]):
+            kpy, kpx = np.unravel_index(np.argmax(masks[:, :, k], axis=None), masks.shape[0:2])
+            sparse_mask.append(kpx + kpy * kp_masks.shape[1])
+        sparse_masks.append(sparse_mask)
+    sparse_masks = np.array(sparse_masks, dtype=np.int32)
+
+    # DEBUG: Sanity checks
     for j in range(kp_masks.shape[0]):
         for k in range(kp_masks.shape[1]):
             mask_sum = np.sum(kp_masks[j, k])
             if mask_sum > 1:
                 raise Exception("Image with ID %i produced a mask with np.sum(mask) = %.2f > 1 " % (image_id, mask_sum))
 
-    return image, image_meta, class_ids, bbox, kp_masks, kp_ids
+    for i in range(bbox.shape[0]):
+        y1, x1, y2, x2 = bbox[i]
+        if y1 > y2:  raise Exception("INFO: Image with ID %i produced erroneus bbox y1 > y2" % image_id)
+        if x1 > x2:  raise Exception("INFO: Image with ID %i produced erroneus bbox x1 > x2" % image_id)
+        if y1 == y2: raise Exception("INFO: Image with ID %i produced erroneus bbox y1 == y2" % image_id)
+        if x1 == x2: raise Exception("INFO: Image with ID %i produced erroneus bbox x1 == x2" % image_id)
 
+    return image, image_meta, class_ids, kp_ids, bbox, sparse_masks
 
 def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks, config):
     """Generate targets for training Stage 2 classifier and mask heads.
@@ -1710,7 +1727,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
 
             # Get GT bounding boxes and masks for image.
             image_id = image_ids[image_index]
-            image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp_ids = \
+            image, image_meta, gt_class_ids, gt_kp_ids, gt_boxes, gt_masks = \
                 load_image_gt(dataset, config, image_id, augment=augment,
                               augmentation=augmentation)
 
@@ -1718,6 +1735,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             # where we train on a subset of classes and the image doesn't
             # have any of the classes we care about.
             if not np.any(gt_kp_ids > 0):
+                print("INFO: Skipping image with ID %i. No kp instances" % image_id)
                 continue
 
             # RPN Targets
@@ -1750,8 +1768,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 batch_gt_boxes = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_masks = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES,
-                     gt_masks.shape[1], gt_masks.shape[2], gt_masks.shape[3]), dtype=gt_masks.dtype)
+                    (batch_size, config.MAX_GT_INSTANCES, gt_masks.shape[1]), dtype=gt_masks.dtype)
                 if random_rois:
                     batch_rpn_rois = np.zeros(
                         (batch_size, rpn_rois.shape[0], 4), dtype=rpn_rois.dtype)

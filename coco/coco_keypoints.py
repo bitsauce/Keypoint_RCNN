@@ -246,9 +246,15 @@ class CocoDataset(utils.Dataset):
             print("mask_size:",mask_size)
             raise Exception("Wrong maks size")
 
-        # Build mask of shape [height, width, instance_count] and list
+        # Build mask of shape [NUM_KEYPOINTS, height, width] and list
         # of class IDs that correspond to each channel of the mask.
         for annotation in annotations:
+
+            # Skip crowds
+            if annotation["iscrowd"]:
+                print("INFO: There are crowd annotations")
+                continue
+
             # Get keypoint positions
             kps = np.array(annotation["keypoints"])
             x = kps[0::3]
