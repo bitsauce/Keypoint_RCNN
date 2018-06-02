@@ -489,7 +489,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     gt_class_ids: [MAX_GT_INSTANCES] int class IDs
     gt_kp_ids: [MAX_GT_INSTANCES, NUM_KEYPOINTS] int kp IDs
     gt_boxes: [MAX_GT_INSTANCES, (y1, x1, y2, x2)] in normalized coordinates.
-    gt_masks: [MAX_GT_INSTANCES, NUM_KEYPOINTS, height, width] of boolean type.
+    gt_masks: [MAX_GT_INSTANCES, NUM_KEYPOINTS] sparse kp mask.
 
     Returns: Target ROIs and corresponding class IDs, bounding box shifts,
     and masks.
@@ -497,7 +497,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     class_ids: [TRAIN_ROIS_PER_IMAGE]. Integer class IDs. Zero padded.
     deltas: [TRAIN_ROIS_PER_IMAGE, NUM_CLASSES, (dy, dx, log(dh), log(dw))]
             Class-specific bbox refinements.
-    masks: [TRAIN_ROIS_PER_IMAGE, NUM_KEYPOINTS, height, width]. Masks cropped to bbox
+    masks: [TRAIN_ROIS_PER_IMAGE, NUM_KEYPOINTS]. Masks cropped to bbox
            boundaries and resized to neural network output size.
 
     Note: Returned arrays might be zero padded if not enough target ROIs.
@@ -539,12 +539,15 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     crowd_iou_max = tf.reduce_max(crowd_overlaps, axis=1)
     no_crowd_bool = (crowd_iou_max < 0.001)
 
-    # Determine postive and negative ROIs
+    # Determine positive and negative ROIs
     roi_iou_max = tf.reduce_max(overlaps, axis=1)
 
     # 1. Positive ROIs are those with >= 0.5 IoU with a GT box
     positive_roi_bool = (roi_iou_max >= 0.5)
     positive_indices = tf.where(positive_roi_bool)[:, 0]
+
+    # with tf.control_dependencies([tf.Assert(tf.greater(tf.shape(positive_indices)[0], 0), [positive_indices])]):
+    #     positive_indices = tf.identity(positive_indices)
 
     # 2. Negative ROIs are those with < 0.5 with every GT box. Skip crowds.
     negative_indices = tf.where(tf.logical_and(roi_iou_max < 0.5, no_crowd_bool))[:, 0]
@@ -555,6 +558,9 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
                          config.ROI_POSITIVE_RATIO)
     positive_indices = tf.random_shuffle(positive_indices)[:positive_count]
     positive_count = tf.shape(positive_indices)[0]
+    
+    # with tf.control_dependencies([tf.Assert(tf.greater(positive_count, 0), [positive_count])]):
+    #     positive_indices = tf.identity(positive_indices)
 
     # Negative ROIs. Add enough to maintain positive:negative ratio.
     r = 1.0 / config.ROI_POSITIVE_RATIO
@@ -576,58 +582,68 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     deltas = utils.box_refinement_graph(positive_rois, roi_gt_boxes)
     deltas /= config.BBOX_STD_DEV
 
+    # Pick the right mask for each ROI
+    masks = tf.gather(gt_masks, roi_gt_box_assignment)
+    print("gt_masks.shape", masks.shape)
+
     # Flatten masks
-    # [N, NUM_KEYPOINTS, height x width]
-    mask_shape = tf.shape(gt_masks)
-    masks = tf.reshape(gt_masks, (mask_shape[0], mask_shape[1], -1))
-    kps_1d_indices = tf.reshape(tf.argmax(tf.cast(masks, tf.uint8), axis=2, output_type=tf.int32), (-1,))
-    print("gt_masks.shape", gt_masks.shape)
+    # [N, NUM_KEYPOINTS]
+    mask_shape = tf.shape(masks)
     print("masks.shape", masks.shape)
+
+    # [N x NUM_KEYPOINTS]
+    kps_1d_indices = tf.reshape(masks, (-1,))
     print("kps_1d_indices.shape", kps_1d_indices.shape)
 
     # Crop input masks to MASK_SHAPE
     # Get kp x, y location
-    # [N, NUM_KEYPOINTS, height x width]
-    # kps_yx = tf.unravel_index(kps_1d_indices, mask_shape[2:]) #tf.argmax(gt_masks, axis=2, output_type=tf.int32)
-    # i = 0
-    # x, y = i // width, i % width
-    kps_y = tf.mod(kps_1d_indices, mask_shape[1])
-    kps_x = tf.floor_div(kps_1d_indices, mask_shape[1])
-    kps_y = tf.reshape(kps_y, (mask_shape[0], mask_shape[1], -1))
-    kps_x = tf.reshape(kps_x, (mask_shape[0], mask_shape[1], -1))
-    #kps_x = #tf.argmax(gt_masks, axis=3, output_type=tf.int32)
-    #print("kps_yx.shape", kps_yx.shape)
+    # [N x NUM_KEYPOINTS]
+    kps_y = tf.cast(tf.mod(kps_1d_indices, config.IMAGE_SHAPE[1]), dtype=tf.float32) / config.IMAGE_SHAPE[0]
+    kps_x = tf.cast(tf.floor_div(kps_1d_indices, config.IMAGE_SHAPE[1]), dtype=tf.float32) / config.IMAGE_SHAPE[1]
+    
+    # [N, NUM_KEYPOINTS]
+    kps_y = tf.reshape(kps_y, (mask_shape[0], mask_shape[1],))
+    kps_x = tf.reshape(kps_x, (mask_shape[0], mask_shape[1],))
+
     print("kps_x.shape", kps_x.shape)
 
-    # [N, (y1, x1, y2, x2)]
-    boxes = tf.cast(positive_rois, tf.int32)
+    # [N, (y1, x1, y2, x2), 1]
+    boxes = tf.expand_dims(roi_gt_boxes, axis=2)
+
+    """asserts = [
+        tf.Assert(tf.equal(tf.shape(boxes)[0], tf.shape(kps_y)[0]), [tf.shape(boxes), tf.shape(kps_y)], summarize=100)
+        ]
+    with tf.control_dependencies(asserts):
+        kps_y = tf.identity(kps_y)"""
+
     kps_y = kps_y - boxes[:, 0]
     kps_x = kps_x - boxes[:, 1]
     print("kps_x.shape", kps_x.shape)
 
     # Calculate corresponding position in resized mask
-    # [N, NUM_KEYPOINTS, height x width]
-    resized_kps_y = tf.cast((kps_y / (boxes[:, 0] - boxes[:, 2])) * config.MASK_SHAPE[0], tf.uint8)
-    resized_kps_x = tf.cast((kps_x / (boxes[:, 1] - boxes[:, 3])) * config.MASK_SHAPE[1], tf.uint8)
-
+    # [N, NUM_KEYPOINTS]
+    resized_kps_y = tf.cast((kps_y / (boxes[:, 0] - boxes[:, 2])) * config.MASK_SHAPE[0], tf.int32)
+    resized_kps_x = tf.cast((kps_x / (boxes[:, 1] - boxes[:, 3])) * config.MASK_SHAPE[1], tf.int32)
     print("resized_kps_x.shape", resized_kps_x.shape)
 
+    #resized_kps_x = tf.Print(resized_kps_x, [kps_x, resized_kps_x, boxes, roi_gt_boxes], summarize=10000)
+
     # Find 1D location in mask
-    # [N, NUM_KEYPOINTS, height x width]
+    # [N, NUM_KEYPOINTS]
     kps_indices = resized_kps_x + resized_kps_y * config.MASK_SHAPE[1]
     print("kps_indices.shape", kps_indices.shape)
 
+    masks = kps_indices#tf.reshape(kps_indices, (mask_shape[0], mask_shape[1]))
+    print("masks.shape", masks.shape)
+
     # Create one hot mask from unraveled and resized x, y
+    # [N x NUM_KEYPOINTS, height x width]
+    #masks = tf.one_hot(kps_indices, config.MASK_SHAPE[0] * config.MASK_SHAPE[1])
+    #print("masks.shape", masks.shape)
+
     # [N, NUM_KEYPOINTS, height x width]
-    masks = tf.one_hot(kps_indices, config.MASK_SHAPE[0] * config.MASK_SHAPE[1])
-    print("masks.shape", masks.shape)
-
-    # [N, NUM_KEYPOINTS, height, width]
-    masks = tf.reshape(masks, (-1, config.NUM_KEYPOINTS, config.MASK_SHAPE[0], config.MASK_SHAPE[1]))
-    print("masks.shape", masks.shape)
-
-    # Pick the right mask for each ROI
-    masks = tf.gather(masks, roi_gt_box_assignment)
+    #masks = tf.reshape(masks, (mask_shape[0], mask_shape[1], config.MASK_SHAPE[0], config.MASK_SHAPE[1]))
+    #print("masks.shape", masks.shape)
 
     # Append negative ROIs and pad bbox deltas and masks that
     # are not used for negative ROIs with zeros.
@@ -639,7 +655,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     roi_gt_class_ids = tf.pad(roi_gt_class_ids, [(0, N + P)])
     roi_target_kp_ids = tf.pad(roi_target_kp_ids, [(0, N + P), (0, 0)])
     deltas = tf.pad(deltas, [(0, N + P), (0, 0)])
-    masks = tf.pad(masks, [(0, N + P), (0, 0), (0, 0), (0, 0)])
+    masks = tf.pad(masks, [(0, N + P), (0, 0)])
 
     return rois, roi_gt_class_ids, roi_target_kp_ids, deltas, masks
 
@@ -654,7 +670,7 @@ class DetectionTargetLayer(KE.Layer):
     gt_class_ids: [batch, MAX_GT_INSTANCES] Integer class IDs.
     gt_boxes: [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)] in normalized
               coordinates.
-    gt_masks: [batch, height, width, MAX_GT_INSTANCES] of boolean type
+    gt_masks: [batch, MAX_GT_INSTANCES, NUM_KEYPOINTS] of boolean type
 
     Returns: Target ROIs and corresponding class IDs, bounding box shifts,
     and masks.
@@ -698,8 +714,7 @@ class DetectionTargetLayer(KE.Layer):
             (None, 1),  # class_ids
             (None, self.config.NUM_KEYPOINTS), # kp_ids
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_KEYPOINTS,
-             self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1])  # masks
+            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_KEYPOINTS)  # masks
         ]
 
     def compute_mask(self, inputs, mask=None):
@@ -1174,12 +1189,21 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
 def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
     """Mask binary cross-entropy loss for the masks head.
 
-    target_masks: [batch, num_rois, num_keypoints, height, width].
-        A float32 tensor of values 0 or 1. Uses zero padding to fill array.
+    target_masks: [batch, num_rois, num_keypoints]. Sparse target masks.
     target_kp_ids: [batch, num_rois, num_keypoints]. Keypoint classes. Zero padded.
     pred_masks: [batch, num_rois, num_keypoints, height, width] float32 tensor
                 with values from 0 to 1.
     """
+    
+    # Convert target masks to int
+    target_masks = tf.cast(target_masks, tf.int32)
+
+    print("")
+    print("mrcnn_mask_loss_graph shapes:")
+    print("target_masks.shape", target_masks.shape)
+    print("target_masks.dtype", target_masks.dtype)
+    print("target_kp_ids.shape", target_kp_ids.shape)
+    print("pred_masks.shape", pred_masks.shape)
     
     DEBUG = False
     if DEBUG:
@@ -1213,9 +1237,10 @@ def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
     # [batch x num_rois x num_keypoints]
     target_kp_ids = tf.reshape(target_kp_ids, (-1,))
 
-    # [batch x num_rois x num_keypoints, height, width]
-    target_shape = tf.shape(target_masks) # NOTE TO SELF: Be sceptical about these K.reshapes
-    target_masks = tf.reshape(target_masks, (-1, target_shape[3], target_shape[4]))
+    # [batch x num_rois x num_keypoints]
+    target_shape = tf.shape(target_masks)
+    N = target_shape[1] * target_shape[2]
+    target_masks = tf.reshape(target_masks, (N,))
     
     # [batch x num_rois x num_keypoints, height, width]
     pred_shape = tf.shape(pred_masks)
@@ -1228,30 +1253,25 @@ def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
 
     # Flatten ys
     # [N, height x width]
-    y_shape = tf.shape(target_masks)
-    y_true = tf.reshape(target_masks, (y_shape[0], -1))
-    y_pred = tf.reshape(pred_masks, (y_shape[0], -1))
+    y_pred = tf.reshape(pred_masks, (N, -1))
 
     # Gather the masks (predicted and true) that contribute to loss
     # [N, height, width]
-    y_true = tf.gather(y_true, positive_idx)
+    y_true = tf.gather(target_masks, positive_idx)
     y_pred = tf.gather(y_pred, positive_idx)
 
-    # TODO: assert y_trues are one-hot
-        
-    print("mrcnn_mask_loss_graph shapes:")
-    print("target_masks.shape", target_masks.shape)
-    print("target_kp_ids.shape", target_kp_ids.shape)
-    print("pred_masks.shape", pred_masks.shape)
+    positive_idx = tf.where(tf.logical_and(y_true >= 0, y_true < pred_shape[3] * pred_shape[4]))[:, 0]
+    
+    y_true = tf.gather(y_true, positive_idx)
+    y_pred = tf.gather(y_pred, positive_idx)
+  
     print("y_true.shape", y_true.shape)
     print("y_pred.shape", y_pred.shape)
+    print("")
 
-    # Compute cross entropy. If no positive ROIs, then return 0.
-    # shape: [batch, roi, num_classes]
+    # Compute cross entropy
     loss = K.switch(tf.size(y_true) > 0,
-                   #tf.nn.softmax_cross_entropy_with_logits(labels=y_pred, logits=y_true),
-                   K.categorical_crossentropy(target=y_true, output=y_pred),
-                   #tf.binary_crossentropy(target=y_true, output=y_pred),
+                   tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y_true, logits=y_pred),
                    tf.constant(0.0))
     loss = tf.reduce_mean(loss)
     return loss
@@ -1313,11 +1333,10 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None):
     # Turn mask into sparse vector
     sparse_masks = []
     for j in range(kp_masks.shape[0]):
-        masks = kp_masks[j]
         sparse_mask = []
-        for k in range(kp_masks.shape[-1]):
-            kpy, kpx = np.unravel_index(np.argmax(masks[:, :, k], axis=None), masks.shape[0:2])
-            sparse_mask.append(kpx + kpy * kp_masks.shape[1])
+        for k in range(kp_masks.shape[1]):
+            kpy, kpx = np.unravel_index(np.argmax(kp_masks[j, k], axis=None), kp_masks.shape[2:])
+            sparse_mask.append(kpx + kpy * kp_masks.shape[3])
         sparse_masks.append(sparse_mask)
     sparse_masks = np.array(sparse_masks, dtype=np.int32)
 
@@ -1768,7 +1787,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 batch_gt_boxes = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_masks = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES, gt_masks.shape[1]), dtype=gt_masks.dtype)
+                    (batch_size, config.MAX_GT_INSTANCES, gt_masks.shape[1]), dtype=np.int32)
                 if random_rois:
                     batch_rpn_rois = np.zeros(
                         (batch_size, rpn_rois.shape[0], 4), dtype=rpn_rois.dtype)
@@ -1910,11 +1929,13 @@ class MaskRCNN():
                 x, K.shape(input_image)[1:3]))(input_gt_boxes)
 
             # 4. GT Masks (zero padded)
-            # [batch, MAX_GT_INSTANCES, NUM_KEYPOINTS, height, width]
+            # [batch, MAX_GT_INSTANCES, NUM_KEYPOINTS]
             input_gt_masks = KL.Input(
-                shape=[None, config.NUM_KEYPOINTS, config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1]],
-                name="input_gt_masks", dtype=bool)
+                shape=[None, config.NUM_KEYPOINTS],
+                name="input_gt_masks", dtype=tf.int32)
 
+            print("")
+            print("build:")
             print("input_gt_boxes.shape", input_gt_boxes.shape)
             print("input_gt_kp_ids.shape", input_gt_kp_ids.shape)
             print("input_gt_masks.shape", input_gt_masks.shape)
@@ -2020,6 +2041,7 @@ class MaskRCNN():
 
             # Shapes:
             print("target_mask.shape", target_mask.shape)
+            print("target_mask.dtype", target_mask.dtype)
             # target_mask.shape = [BATCH_SIZE, TRAIN_ROIS_PER_IMAGE,
             #                      config.MASK_SHAPE[0], config.MASK_SHAPE[1],
             #                      num_keypoints]

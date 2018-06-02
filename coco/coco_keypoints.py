@@ -252,7 +252,6 @@ class CocoDataset(utils.Dataset):
 
             # Skip crowds
             if annotation["iscrowd"]:
-                print("INFO: There are crowd annotations")
                 continue
 
             # Get keypoint positions
