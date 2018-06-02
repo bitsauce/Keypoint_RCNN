@@ -513,31 +513,11 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     # Remove zero padding
     proposals, _ = trim_zeros_graph(proposals, name="trim_proposals")
     gt_boxes, non_zeros = trim_zeros_graph(gt_boxes, name="trim_gt_boxes")
-    gt_class_ids = tf.boolean_mask(gt_class_ids, non_zeros,
-                                   name="trim_gt_class_ids")
-    #gt_masks = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=0,
-    #                     name="trim_gt_masks")
-    gt_masks = tf.boolean_mask(gt_masks, non_zeros,
-                               name="trim_gt_masks")
-
-    # Handle COCO crowds
-    # A crowd box in COCO is a bounding box around several instances. Exclude
-    # them from training. A crowd box is given a negative class ID.
-    crowd_ix = tf.where(gt_class_ids < 0)[:, 0]
-    non_crowd_ix = tf.where(gt_class_ids > 0)[:, 0]
-    crowd_boxes = tf.gather(gt_boxes, crowd_ix)
-    crowd_masks = tf.gather(gt_masks, crowd_ix, axis=0)
-    gt_class_ids = tf.gather(gt_class_ids, non_crowd_ix)
-    gt_boxes = tf.gather(gt_boxes, non_crowd_ix)
-    gt_masks = tf.gather(gt_masks, non_crowd_ix, axis=0)
+    gt_class_ids = tf.boolean_mask(gt_class_ids, non_zeros, name="trim_gt_class_ids")
+    gt_masks = tf.boolean_mask(gt_masks, non_zeros, name="trim_gt_masks")
 
     # Compute overlaps matrix [proposals, gt_boxes]
     overlaps = overlaps_graph(proposals, gt_boxes)
-
-    # Compute overlaps with crowd boxes [anchors, crowds]
-    crowd_overlaps = overlaps_graph(proposals, crowd_boxes)
-    crowd_iou_max = tf.reduce_max(crowd_overlaps, axis=1)
-    no_crowd_bool = (crowd_iou_max < 0.001)
 
     # Determine positive and negative ROIs
     roi_iou_max = tf.reduce_max(overlaps, axis=1)
@@ -549,8 +529,8 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     # with tf.control_dependencies([tf.Assert(tf.greater(tf.shape(positive_indices)[0], 0), [positive_indices])]):
     #     positive_indices = tf.identity(positive_indices)
 
-    # 2. Negative ROIs are those with < 0.5 with every GT box. Skip crowds.
-    negative_indices = tf.where(tf.logical_and(roi_iou_max < 0.5, no_crowd_bool))[:, 0]
+    # 2. Negative ROIs are those with < 0.5 with every GT box
+    negative_indices = tf.where(roi_iou_max < 0.5))[:, 0]
 
     # Subsample ROIs. Aim for 33% positive
     # Positive ROIs
@@ -1187,7 +1167,8 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
     return loss
 
 def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
-    """Mask binary cross-entropy loss for the masks head.
+    """
+    Mask binary cross-entropy loss for the masks head.
 
     target_masks: [batch, num_rois, num_keypoints]. Sparse target masks.
     target_kp_ids: [batch, num_rois, num_keypoints]. Keypoint classes. Zero padded.
@@ -1240,13 +1221,11 @@ def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
     # [batch x num_rois x num_keypoints]
     target_shape = tf.shape(target_masks)
     N = target_shape[1] * target_shape[2]
-    target_masks = tf.reshape(target_masks, (N,))
+    target_masks = tf.reshape(target_masks, (-1,))
     
     # [batch x num_rois x num_keypoints, height, width]
     pred_shape = tf.shape(pred_masks)
     pred_masks = tf.reshape(pred_masks, (-1, pred_shape[3], pred_shape[4]))
-
-    # TODO: assert on these masks
 
     # Select only masks that are non-zero
     positive_idx = tf.where(target_kp_ids > 0)[:, 0]
@@ -1271,8 +1250,8 @@ def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
 
     # Compute cross entropy
     loss = K.switch(tf.size(y_true) > 0,
-                   tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y_true, logits=y_pred),
-                   tf.constant(0.0))
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y_true, logits=y_pred),
+                    tf.constant(0.0))
     loss = tf.reduce_mean(loss)
     return loss
 
@@ -1514,26 +1493,9 @@ def build_rpn_targets(image_shape, anchors, gt_class_ids, gt_boxes, config):
     """
     # RPN Match: 1 = positive anchor, -1 = negative anchor, 0 = neutral
     rpn_match = np.zeros([anchors.shape[0]], dtype=np.int32)
+    
     # RPN bounding boxes: [max anchors per image, (dy, dx, log(dh), log(dw))]
     rpn_bbox = np.zeros((config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4))
-
-    # Handle COCO crowds
-    # A crowd box in COCO is a bounding box around several instances. Exclude
-    # them from training. A crowd box is given a negative class ID.
-    crowd_ix = np.where(gt_class_ids < 0)[0]
-    if crowd_ix.shape[0] > 0:
-        # Filter out crowds from ground truth class IDs and boxes
-        non_crowd_ix = np.where(gt_class_ids > 0)[0]
-        crowd_boxes = gt_boxes[crowd_ix]
-        gt_class_ids = gt_class_ids[non_crowd_ix]
-        gt_boxes = gt_boxes[non_crowd_ix]
-        # Compute overlaps with crowd boxes [anchors, crowds]
-        crowd_overlaps = utils.compute_overlaps(anchors, crowd_boxes)
-        crowd_iou_max = np.amax(crowd_overlaps, axis=1)
-        no_crowd_bool = (crowd_iou_max < 0.001)
-    else:
-        # All anchors don't intersect a crowd
-        no_crowd_bool = np.ones([anchors.shape[0]], dtype=bool)
 
     # Compute overlaps [num_anchors, num_gt_boxes]
     overlaps = utils.compute_overlaps(anchors, gt_boxes)
@@ -1547,10 +1509,10 @@ def build_rpn_targets(image_shape, anchors, gt_class_ids, gt_boxes, config):
     # match it to the closest anchor (even if its max IoU is < 0.3).
     #
     # 1. Set negative anchors first. They get overwritten below if a GT box is
-    # matched to them. Skip boxes in crowd areas.
+    # matched to them.
     anchor_iou_argmax = np.argmax(overlaps, axis=1)
     anchor_iou_max = overlaps[np.arange(overlaps.shape[0]), anchor_iou_argmax]
-    rpn_match[(anchor_iou_max < 0.3) & (no_crowd_bool)] = -1
+    rpn_match[anchor_iou_max < 0.3] = -1
     # 2. Set an anchor for each GT box (regardless of IoU value).
     # TODO: If multiple anchors have the same IoU match all of them
     gt_iou_argmax = np.argmax(overlaps, axis=0)
