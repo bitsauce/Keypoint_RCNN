@@ -7,7 +7,7 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
 
-DEBUG = False
+DEBUG = True
 
 import os
 import random
@@ -612,8 +612,8 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
 
     # Calculate corresponding position in resized mask
     # [N, NUM_KEYPOINTS]
-    resized_kps_y = tf.cast((kps_y / (boxes[:, 0] - boxes[:, 2])) * config.MASK_SHAPE[0], tf.int32)
-    resized_kps_x = tf.cast((kps_x / (boxes[:, 1] - boxes[:, 3])) * config.MASK_SHAPE[1], tf.int32)
+    resized_kps_y = tf.cast((kps_y / (boxes[:, 2] - boxes[:, 0])) * config.MASK_SHAPE[0], tf.int32)
+    resized_kps_x = tf.cast((kps_x / (boxes[:, 3] - boxes[:, 1])) * config.MASK_SHAPE[1], tf.int32)
     if DEBUG: print("resized_kps_x.shape", resized_kps_x.shape)
     
     if DEBUG: resized_kps_y = tf.Print(resized_kps_y, [resized_kps_y, tf.shape(resized_kps_y)], summarize=1000000, message="resized_kps_y") # DEBUG
@@ -1176,7 +1176,7 @@ def mrcnn_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
     
     # Convert target masks to int
     target_masks = tf.cast(target_masks, tf.int32)
-    
+
     if DEBUG: 
         print("")
         print("mrcnn_mask_loss_graph shapes:")
@@ -1728,7 +1728,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             # where we train on a subset of classes and the image doesn't
             # have any of the classes we care about.
             if not np.any(gt_kp_ids > 0):
-                print("INFO: Skipping image with ID %i. No kp instances" % image_id)
+                if DEBUG: print("INFO: Skipping image with ID %i. No kp instances" % image_id)
                 continue
 
             # RPN Targets
