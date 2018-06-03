@@ -887,3 +887,15 @@ def denorm_boxes(boxes, shape):
     scale = np.array([h - 1, w - 1, h - 1, w - 1])
     shift = np.array([0, 0, 1, 1])
     return np.around(np.multiply(boxes, scale) + shift).astype(np.int32)
+
+def sparse_to_dense_masks(sparse_masks, image_shape):
+    masks = []
+    for i in range(sparse_masks.shape[0]):
+        instance_masks = []
+        for j in range(sparse_masks.shape[1]):
+            mask = np.zeros((image_shape[:2]), dtype=np.bool)
+            k = sparse_masks[i, j]
+            mask[k // mask.shape[1], k % mask.shape[1]] = True
+            instance_masks.append(mask)
+        masks.append(instance_masks)
+    return np.array(masks)

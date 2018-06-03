@@ -263,7 +263,9 @@ class CocoDataset(utils.Dataset):
                     # Consider only annotated keypoints
                     if kp_coco_id and v[kp_coco_id - 1] > 0:
                         mask[int(int(y[kp_coco_id - 1] * scale) + pad_top), int(int(x[kp_coco_id - 1] * scale) + pad_left)] = True
-
+                    else:
+                        kp_id = 0
+                        
                     masks.append(mask)
                     ids.append(kp_id)
             kp_masks.append(masks)
