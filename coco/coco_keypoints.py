@@ -215,7 +215,7 @@ class CocoDataset(utils.Dataset):
             print("... done unzipping")
         print("Will use annotations in " + annFile)
 
-    def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None, verify_size=False):
+    def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None):
         """Loads the binary masks for each keypoint in the image.
 
         Returns:
@@ -240,12 +240,6 @@ class CocoDataset(utils.Dataset):
         mask_size = (int(round(image_info["height"] * scale) + pad_top + pad_bot),
                      int(round(image_info["width"] * scale) + pad_left + pad_right))
 
-        if verify_size and (mask_size[0] != 1024 or mask_size[1] != 1024):
-            print("padding:",padding)
-            print("scale:",scale)
-            print("mask_size:",mask_size)
-            raise Exception("Wrong maks size")
-
         # Build mask of shape [NUM_KEYPOINTS, height, width] and list
         # of class IDs that correspond to each channel of the mask.
         for annotation in annotations:
@@ -268,7 +262,7 @@ class CocoDataset(utils.Dataset):
                     
                     # Consider only annotated keypoints
                     if kp_coco_id and v[kp_coco_id - 1] > 0:
-                        mask[int(round(y[kp_coco_id - 1] * scale) + pad_top), int(round(x[kp_coco_id - 1] * scale) + pad_left)] = True
+                        mask[int(int(y[kp_coco_id - 1] * scale) + pad_top), int(int(x[kp_coco_id - 1] * scale) + pad_left)] = True
 
                     masks.append(mask)
                     ids.append(kp_id)
