@@ -567,7 +567,13 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     deltas /= config.BBOX_STD_DEV
 
     # Pick the right mask for each ROI
-    if DEBUG: gt_masks = tf.Print(gt_masks, [gt_masks, tf.shape(gt_masks)], summarize=1000000, message="gt_masks") # DEBUG
+    if DEBUG:
+        gt_masks = tf.Print(gt_masks, [gt_masks, tf.shape(gt_masks)], summarize=1000000, message="gt_masks") # DEBUG
+        #gt_masks = KL.Activation("linear", name="debug_gt_target_masks")(gt_masks)
+        #test_out = KL.Lambda(lambda x: x * 1, name="debug_gt_target_masks")(gt_masks)
+        #print(type(test_out))
+        #DEBUG_OUTPUTS.append(test_out)
+
     if DEBUG: roi_gt_box_assignment = tf.Print(roi_gt_box_assignment, [roi_gt_box_assignment, tf.shape(roi_gt_box_assignment)], summarize=1000000, message="roi_gt_box_assignment") # DEBUG
     masks = tf.gather(gt_masks, roi_gt_box_assignment)
     if DEBUG: masks = tf.Print(masks, [masks, tf.shape(masks)], summarize=1000000, message="masks") # DEBUG
@@ -580,47 +586,40 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
 
     # [N x NUM_KEYPOINTS]
     kps_1d_indices = tf.reshape(masks, (-1,))
-    if DEBUG: kps_1d_indices = tf.Print(kps_1d_indices, [kps_1d_indices, tf.shape(kps_1d_indices)], summarize=1000000, message="kps_1d_indices") # DEBUG
     if DEBUG: print("kps_1d_indices.shape", kps_1d_indices.shape)
 
     # Crop input masks to MASK_SHAPE
-    # Get kp x, y location
+    # Get image relative kp x, y location
     # [N x NUM_KEYPOINTS]
-    kps_y = tf.cast(tf.mod(kps_1d_indices, config.IMAGE_SHAPE[1]), dtype=tf.float32) / config.IMAGE_SHAPE[0]
-    kps_x = tf.cast(tf.floor_div(kps_1d_indices, config.IMAGE_SHAPE[1]), dtype=tf.float32) / config.IMAGE_SHAPE[1]
+    kps_y = tf.cast(tf.floor_div(kps_1d_indices, config.IMAGE_SHAPE[1]), dtype=tf.float32)
+    kps_x = tf.cast(tf.mod(kps_1d_indices, config.IMAGE_SHAPE[1]), dtype=tf.float32)
 
-    if DEBUG: kps_y = tf.Print(kps_y, [kps_y, tf.shape(kps_y)], summarize=1000000, message="kps_y:0") # DEBUG
-    if DEBUG: kps_x = tf.Print(kps_x, [kps_x, tf.shape(kps_x)], summarize=1000000, message="kps_x:0") # DEBUG
-    
+    # Normalize x, y to image [0, 1] coords
+    # [N x NUM_KEYPOINTS]
+    kps_y = kps_y / config.IMAGE_SHAPE[0]
+    kps_x = kps_x / config.IMAGE_SHAPE[1]
+
+    # Reshape to per keypoint
     # [N, NUM_KEYPOINTS]
     kps_y = tf.reshape(kps_y, (mask_shape[0], mask_shape[1],))
     kps_x = tf.reshape(kps_x, (mask_shape[0], mask_shape[1],))
-
-    if DEBUG: kps_y = tf.Print(kps_y, [kps_y, tf.shape(kps_y)], summarize=1000000, message="kps_y:1") # DEBUG
-    if DEBUG: kps_x = tf.Print(kps_x, [kps_x, tf.shape(kps_x)], summarize=1000000, message="kps_x:1") # DEBUG
     if DEBUG: print("kps_x.shape", kps_x.shape)
 
+    # Find box relative kp x, y
     # [N, (y1, x1, y2, x2), 1]
-    boxes = tf.expand_dims(roi_gt_boxes, axis=2)
-    if DEBUG: boxes = tf.Print(boxes, [boxes, tf.shape(boxes)], summarize=1000000, message="boxes") # DEBUG
+    boxes = tf.expand_dims(positive_rois, axis=2)
     kps_y = kps_y - boxes[:, 0]
     kps_x = kps_x - boxes[:, 1]
     if DEBUG: print("kps_x.shape", kps_x.shape)
-    
-    if DEBUG: kps_y = tf.Print(kps_y, [kps_y, tf.shape(kps_y)], summarize=1000000, message="kps_y:2") # DEBUG
-    if DEBUG: kps_x = tf.Print(kps_x, [kps_x, tf.shape(kps_x)], summarize=1000000, message="kps_x:2") # DEBUG
 
     # Calculate corresponding position in resized mask
     # [N, NUM_KEYPOINTS]
-    resized_kps_y = tf.cast((kps_y / (boxes[:, 2] - boxes[:, 0])) * config.MASK_SHAPE[0], tf.int32)
-    resized_kps_x = tf.cast((kps_x / (boxes[:, 3] - boxes[:, 1])) * config.MASK_SHAPE[1], tf.int32)
-    if DEBUG: print("resized_kps_x.shape", resized_kps_x.shape)
-    
-    if DEBUG: resized_kps_y = tf.Print(resized_kps_y, [resized_kps_y, tf.shape(resized_kps_y)], summarize=1000000, message="resized_kps_y") # DEBUG
-    if DEBUG: resized_kps_x = tf.Print(resized_kps_x, [resized_kps_x, tf.shape(resized_kps_x)], summarize=1000000, message="resized_kps_x") # DEBUG
+    kps_y = tf.cast((kps_y / (boxes[:, 2] - boxes[:, 0])) * config.MASK_SHAPE[0], tf.int32)
+    kps_x = tf.cast((kps_x / (boxes[:, 3] - boxes[:, 1])) * config.MASK_SHAPE[1], tf.int32)
+    if DEBUG: print("kps_x.shape", kps_x.shape)
 
     # [N, NUM_KEYPOINTS, (x, y)]
-    masks = tf.stack([resized_kps_y, resized_kps_x], axis=2)#kps_indices#tf.reshape(kps_indices, (mask_shape[0], mask_shape[1]))
+    masks = tf.stack([kps_y, kps_x], axis=2)
     if DEBUG: print("masks.shape", masks.shape)
 
     # Append negative ROIs and pad bbox deltas and masks that
@@ -629,7 +628,6 @@ def detection_targets_graph(proposals, gt_class_ids, gt_kp_ids, gt_boxes, gt_mas
     N = tf.shape(negative_rois)[0]
     P = tf.maximum(config.TRAIN_ROIS_PER_IMAGE - tf.shape(rois)[0], 0)
     rois = tf.pad(rois, [(0, P), (0, 0)])
-    roi_gt_boxes = tf.pad(roi_gt_boxes, [(0, N + P), (0, 0)])
     roi_gt_class_ids = tf.pad(roi_gt_class_ids, [(0, N + P)])
     roi_target_kp_ids = tf.pad(roi_target_kp_ids, [(0, N + P), (0, 0)])
     deltas = tf.pad(deltas, [(0, N + P), (0, 0)])
@@ -946,6 +944,10 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
     # Two 1024 FC layers (implemented with Conv2D for consistency)
     x = KL.TimeDistributed(KL.Conv2D(1024, (pool_size, pool_size), padding="valid"),
                            name="mrcnn_class_conv1")(x)
+
+    print("fpn_classifier_graph:")
+    print("x.shape", x.shape)
+
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_class_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     x = KL.TimeDistributed(KL.Conv2D(1024, (1, 1)),
@@ -988,10 +990,18 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
 
     Returns: Masks [batch, roi_count, num_keypoints, height, width]
     """
+
+    print("")
+    for i, fm in enumerate(feature_maps):
+        print("Level %i" % i, fm.shape)
+
     # ROI Pooling
     # Shape: [batch, boxes, pool_height, pool_width, channels]
     x = PyramidROIAlign([pool_size, pool_size],
                         name="roi_align_mask")([rois, image_meta] + feature_maps)
+
+    print("build_fpn_mask_graph:")
+    print("x.shape", x.shape)
 
     # Conv layers
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
@@ -1000,29 +1010,37 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
                            name='mrcnn_mask_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
+    print("x.shape", x.shape)
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_mask_conv2")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_mask_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
+    print("x.shape", x.shape)
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_mask_conv3")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_mask_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
+    print("x.shape", x.shape)
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_mask_conv4")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_mask_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
+    print("x.shape", x.shape)
     x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
                            name="mrcnn_mask_deconv")(x)
+    print("x.shape", x.shape)
     x = KL.TimeDistributed(KL.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid"),
                            name="mrcnn_mask_kp_last")(x)
+    print("x.shape", x.shape)
     x = KL.Permute([1, 4, 2, 3], name="mrcnn_mask")(x)
+    print("x.shape", x.shape)
+    print("")
     return x
 
 
@@ -2035,7 +2053,6 @@ class MaskRCNN():
 
             print("mrcnn_mask.shape", mrcnn_mask.shape)
 
-            # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
 
             # Losses

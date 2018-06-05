@@ -258,7 +258,7 @@ class CocoDataset(utils.Dataset):
             for kp_id, kp_info in enumerate(self.kp_class_info):
                 if kp_info["source"] == "coco":
                     kp_coco_id = kp_info["id"]
-                    mask = np.zeros(mask_size, dtype=bool)
+                    mask = np.zeros(mask_size, dtype=np.bool)
                     
                     # Consider only annotated keypoints
                     if kp_coco_id and v[kp_coco_id - 1] > 0:
@@ -302,8 +302,13 @@ class CocoDataset(utils.Dataset):
         # Build mask of shape [height, width, instance_count] and list
         # of class IDs that correspond to each channel of the mask.
         for annotation in annotations:
+            # Skip crowds
+            if annotation["iscrowd"]:
+                continue
+
+            # Get bounding box as [y1, x1, y2, x2] 
             x, y, w, h = annotation["bbox"]
-            bbox = np.array([pad_top + y * scale, pad_left + x *scale, pad_top + (y + h) * scale, pad_left + (x + w) * scale])
+            bbox = np.array([pad_top + y * scale, pad_left + x * scale, pad_top + (y + h) * scale, pad_left + (x + w) * scale])
             instance_bboxes.append(bbox)
 
         # Pack instance masks into an array

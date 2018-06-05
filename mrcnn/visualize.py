@@ -219,7 +219,6 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
     for i in range(num_persons):
         person_masks, person_kp_ids = masks[i], kp_ids[i]
         color = colors[i]
-        masked_image = image.astype(np.uint32).copy()
 
         # Draw person bbox
         if show_bbox:
@@ -237,7 +236,12 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
             v = np.zeros((num_keypoints)) # visibility
             for j, kp_id in enumerate(person_kp_ids):
                 if kp_id > 0:
-                    kpy, kpx = np.unravel_index(np.argmax(person_masks[j], axis=None), person_masks.shape[1:])
+                    if len(person_masks.shape) == 2:
+                        kpy, kpx = person_masks[j]
+                    elif len(person_masks.shape) == 3:
+                        kpy, kpx = np.unravel_index(np.argmax(person_masks[j], axis=None), person_masks.shape[1:])
+                    else:
+                        raise Exception("Invalid mask rank")
                     x[kp_id-1] = kpx
                     y[kp_id-1] = kpy
                     v[kp_id-1] = np.sum(person_masks[j]) > 0
@@ -251,7 +255,7 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
             ax.plot(x[v>0], y[v>0], 'o', markersize=8, markerfacecolor=color, markeredgecolor='k', markeredgewidth=2)
             ax.plot(x[v>0], y[v>0], 'o', markersize=8, markerfacecolor=color, markeredgecolor=color, markeredgewidth=2)
 
-    ax.imshow(masked_image.astype(np.uint8))
+    ax.imshow(image)
     if auto_show:
         plt.show()
 
@@ -352,20 +356,6 @@ def draw_rois(image, rois, refined_rois, mask, class_ids, class_names, limit=10)
     print("Negative ROIs: ", class_ids[class_ids == 0].shape[0])
     print("Positive Ratio: {:.2f}".format(
         class_ids[class_ids > 0].shape[0] / class_ids.shape[0]))
-
-
-# TODO: Replace with matplotlib equivalent?
-def draw_box(image, box, color):
-    """Draw 3-pixel width bounding boxes on the given image array.
-    color: list of 3 int values for RGB.
-    """
-    y1, x1, y2, x2 = box
-    image[y1:y1 + 2, x1:x2] = color
-    image[y2:y2 + 2, x1:x2] = color
-    image[y1:y2, x1:x1 + 2] = color
-    image[y1:y2, x2:x2 + 2] = color
-    return image
-
 
 def display_top_masks(image, mask, class_ids, class_names, limit=4):
     """Display the given image and the top few class masks."""
