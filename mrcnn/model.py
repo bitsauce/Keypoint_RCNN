@@ -7,7 +7,7 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
 
-DEBUG = True
+DEBUG = False
 
 import os
 import random
