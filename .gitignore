@@ -2,7 +2,6 @@
 datasets/
 data/
 pycocotools/
-logs/
 *.h5
 results/
 temp/
