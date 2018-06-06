@@ -170,6 +170,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
 
 def display_keypoints(image, boxes, masks, kp_ids=None,
                       skeleton=None, scores=None, title="",
+                      captions=None,
                       figsize=(16, 16), ax=None,
                       show_keypoints=True, show_bbox=True,
                       colors=None):
@@ -254,6 +255,16 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
                         plt.plot(x[sk], y[sk], linewidth=3, color=color)
             ax.plot(x[v>0], y[v>0], 'o', markersize=8, markerfacecolor=color, markeredgecolor='k', markeredgewidth=2)
             ax.plot(x[v>0], y[v>0], 'o', markersize=8, markerfacecolor=color, markeredgecolor=color, markeredgewidth=2)
+    
+            # Captions
+            if captions is not None:
+                for j in range(num_keypoints):
+                    if v[j] > 0:
+                        ax.text(x[j], y[j], captions[j-1], size=11,
+                                verticalalignment='top', horizontalalignment='center',
+                                color='w', backgroundcolor="none",
+                                bbox={'facecolor': color, 'alpha': 0.5,
+                                        'pad': 2, 'edgecolor': 'none'})
 
     ax.imshow(image)
     if auto_show:
