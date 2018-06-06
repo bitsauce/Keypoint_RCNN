@@ -260,7 +260,7 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
             if captions is not None:
                 for j in range(num_keypoints):
                     if v[j] > 0:
-                        ax.text(x[j], y[j], captions[j-1], size=11,
+                        ax.text(x[j], y[j], captions[j+1], size=11,
                                 verticalalignment='top', horizontalalignment='center',
                                 color='w', backgroundcolor="none",
                                 bbox={'facecolor': color, 'alpha': 0.5,
