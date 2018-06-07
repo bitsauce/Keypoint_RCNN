@@ -58,6 +58,7 @@ class Config(object):
 
     # Number of classification classes (including background)
     NUM_CLASSES = 1  # Override in sub-classes
+    NUM_KEYPOINTS = 0
 
     # Length of square anchor side in pixels
     RPN_ANCHOR_SCALES = (32, 64, 128, 256, 512)
@@ -81,6 +82,11 @@ class Config(object):
     # ROIs kept after non-maximum supression (training and inference)
     POST_NMS_ROIS_TRAINING = 2000
     POST_NMS_ROIS_INFERENCE = 1000
+
+    # If enabled, resizes instance masks to a smaller size to reduce
+    # memory load. Recommended when using high-resolution images.
+    USE_MINI_MASK = True
+    MINI_MASK_SHAPE = (56, 56)  # (height, width) of the mini-mask
 
     # Input image resizing
     # Generally, use the "square" resizing mode for training and inferencing
@@ -162,11 +168,12 @@ class Config(object):
     # Loss weights for more precise optimization.
     # Can be used for R-CNN training setup.
     LOSS_WEIGHTS = {
-        "rpn_class_loss": 1.,
-        "rpn_bbox_loss": 1.,
-        "mrcnn_class_loss": 1.,
-        "mrcnn_bbox_loss": 1.,
-        "mrcnn_mask_loss": 1.
+        "rpn_class_loss": 1.0,
+        "rpn_bbox_loss": 1.0,
+        "mrcnn_class_loss": 1.0,
+        "mrcnn_bbox_loss": 1.0,
+        "mrcnn_mask_loss": 1.0,
+        "mrcnn_kp_mask_loss": 1.0
     }
 
     # Use RPN ROIs or externally generated ROIs for training

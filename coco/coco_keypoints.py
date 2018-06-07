@@ -216,107 +216,95 @@ class CocoDataset(utils.Dataset):
         print("Will use annotations in " + annFile)
 
     def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None):
-        """Loads the binary masks for each keypoint in the image.
+        """
+        Load instance masks and sparse kp masks for the given image.
+
+        Different datasets use different ways to store masks. This
+        function converts the different mask format to one format
+        in the form of a bitmap [height, width, instances].
 
         Returns:
+        masks: A bool array of shape [height, width, instance count] with
+            one mask per instance.
+        class_ids: a 1D array of class IDs of the instance masks.
         kp_masks: A bool array of shape [person_count, height, width, kp_count] with
             a one-mask per keypoint.
         kp_ids: an array of shape [person_count, kp_count] of keypoint IDs
             of the each person's keypoints.
         """
+        if crop: raise Exception("Crop not supported")
+
         # If not a COCO image, delegate to parent class.
         image_info = self.image_info[image_id]
         if image_info["source"] != "coco":
             return super(CocoDataset, self).load_mask(image_id)
-        
-        kp_masks = []
-        kp_ids = []
-        annotations = self.image_info[image_id]["annotations"]
-
-        if crop: raise Exception("Crop not supported")
 
         # Calculate mask size
         pad_top, pad_bot, pad_left, pad_right = padding[0][0], padding[0][1], padding[1][0], padding[1][1]
         mask_size = (int(round(image_info["height"] * scale) + pad_top + pad_bot),
                      int(round(image_info["width"] * scale) + pad_left + pad_right))
 
-        # Build mask of shape [NUM_KEYPOINTS, height, width] and list
-        # of class IDs that correspond to each channel of the mask.
-        for annotation in annotations:
-
-            # Skip crowds
-            if annotation["iscrowd"]:
-                continue
-
-            # Get keypoint positions
-            kps = np.array(annotation["keypoints"])
-            x = kps[0::3]
-            y = kps[1::3]
-            v = kps[2::3]
-            masks = []
-            ids = []
-            for kp_id, kp_info in enumerate(self.kp_class_info):
-                if kp_info["source"] == "coco":
-                    kp_coco_id = kp_info["id"]
-                    mask = np.zeros(mask_size, dtype=np.bool)
-                    
-                    # Consider only annotated keypoints
-                    if kp_coco_id and v[kp_coco_id - 1] > 0:
-                        mask[int(int(y[kp_coco_id - 1] * scale) + pad_top), int(int(x[kp_coco_id - 1] * scale) + pad_left)] = True
-                    else:
-                        kp_id = 0
-                        
-                    masks.append(mask)
-                    ids.append(kp_id)
-            kp_masks.append(masks)
-            kp_ids.append(ids)
-
-        if kp_ids:
-            # Append masks and kp ids
-            kp_masks = np.array(kp_masks).astype(np.bool)
-            kp_ids   = np.array(kp_ids)
-        else:
-            # Append an empty mask
-            kp_masks = np.empty([0, 0, 0, 0])
-            kp_ids   = np.empty([0], np.int32)
-        return np.array(kp_masks), np.array(kp_ids)
-
-    def load_bbox(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None):
-        """Load instance bounding box for the given image.
-
-        Returns:
-        bboxes: An array of shape [num_instance, (y1, x1, y2, x2)]
-            with one bounding box per instance
-        """
-        # If not a COCO image, delegate to parent class.
-        image_info = self.image_info[image_id]
-        if image_info["source"] != "coco":
-            return super(CocoDataset, self).load_mask(image_id)
-
-        instance_bboxes = []
+        instance_masks = []
+        class_ids = []
+        kp_masks = []
+        kp_ids = []
         annotations = self.image_info[image_id]["annotations"]
-
-        # Get padding
-        pad_top, pad_left = padding[0][0], padding[1][0]
 
         # Build mask of shape [height, width, instance_count] and list
         # of class IDs that correspond to each channel of the mask.
         for annotation in annotations:
-            # Skip crowds
-            if annotation["iscrowd"]:
-                continue
+            class_id = self.map_source_class_id("coco.{}".format(annotation['category_id']))
+            if class_id:
+                m = self.annToMask(annotation,
+                                   image_info["height"],
+                                   image_info["width"])
+                
+                # Some objects are so small that they're less than 1 pixel area
+                # and end up rounded out. Skip those objects.
+                if m.max() < 1:
+                    continue
 
-            # Get bounding box as [y1, x1, y2, x2] 
-            x, y, w, h = annotation["bbox"]
-            bbox = np.array([pad_top + y * scale, pad_left + x * scale, pad_top + (y + h) * scale, pad_left + (x + w) * scale])
-            instance_bboxes.append(bbox)
+                # Skip crowds
+                if annotation['iscrowd']:
+                    continue
+
+               # Get keypoint positions
+                kps = np.array(annotation["keypoints"])
+                x = kps[0::3]
+                y = kps[1::3]
+                v = kps[2::3]
+                instance_kp_masks = []
+                instance_kp_ids = []
+                for kp_id, kp_info in enumerate(self.kp_class_info):
+                    if kp_info["source"] == "coco":
+                        kp_coco_id = kp_info["id"]
+                        kp_mask = np.zeros(mask_size, dtype=np.bool)
+                        
+                        # Consider only annotated keypoints
+                        if kp_coco_id and v[kp_coco_id - 1] > 0:
+                            kp_mask[int(int(y[kp_coco_id - 1] * scale) + pad_top), int(int(x[kp_coco_id - 1] * scale) + pad_left)] = True
+                        else:
+                            kp_id = 0
+                            
+                        instance_kp_masks.append(kp_mask)
+                        instance_kp_ids.append(kp_id)
+                kp_masks.append(instance_kp_masks)
+                kp_ids.append(instance_kp_ids)
+                instance_masks.append(m)
+                class_ids.append(class_id)
 
         # Pack instance masks into an array
-        if instance_bboxes:
-            return np.stack(instance_bboxes, axis=0).astype(np.int32)
+        if class_ids:
+            mask = np.stack(instance_masks, axis=2).astype(np.bool)
+            class_ids = np.array(class_ids, dtype=np.int32)
+            kp_masks = np.array(kp_masks).astype(np.bool)
+            kp_ids   = np.array(kp_ids)
+            return mask, class_ids, kp_masks, kp_ids
         else:
             # Call super class to return an empty mask
-            return np.empty([0, 0])#super(CocoDataset, self).load_mask(image_id)
+            kp_masks = np.empty([0, 0, 0, 0])
+            kp_ids   = np.empty([0], np.int32)
+            return super(CocoDataset, self).load_mask(image_id), kp_masks, kp_ids
 
     def image_reference(self, image_id):
         """Return a link to the image in the COCO Website."""
@@ -386,6 +374,35 @@ class CocoDataset(utils.Dataset):
                 # Include BG class in all datasets
                 if i == 0 or source == info['source']:
                     self.kp_source_class_ids[source].append(i)
+
+    # The following two functions are from pycocotools with a few changes.
+    def annToRLE(self, ann, height, width):
+        """
+        Convert annotation which can be polygons, uncompressed RLE to RLE.
+        :return: binary mask (numpy 2D array)
+        """
+        segm = ann['segmentation']
+        if isinstance(segm, list):
+            # polygon -- a single object might consist of multiple parts
+            # we merge all parts into one mask rle code
+            rles = maskUtils.frPyObjects(segm, height, width)
+            rle = maskUtils.merge(rles)
+        elif isinstance(segm['counts'], list):
+            # uncompressed RLE
+            rle = maskUtils.frPyObjects(segm, height, width)
+        else:
+            # rle
+            rle = ann['segmentation']
+        return rle
+
+    def annToMask(self, ann, height, width):
+        """
+        Convert annotation which can be polygons, uncompressed RLE, or RLE to binary mask.
+        :return: binary mask (numpy 2D array)
+        """
+        rle = self.annToRLE(ann, height, width)
+        m = maskUtils.decode(rle)
+        return m
 
 ############################################################
 #  COCO Evaluation

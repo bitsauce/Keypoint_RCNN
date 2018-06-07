@@ -168,15 +168,17 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     if auto_show:
         plt.show()
 
-def display_keypoints(image, boxes, masks, kp_ids=None,
+def display_keypoints(image, boxes, kp_masks, kp_ids=None, masks=None,
                       skeleton=None, scores=None, title="",
                       captions=None,
                       figsize=(16, 16), ax=None,
-                      show_keypoints=True, show_bbox=True,
+                      show_keypoints=True,
+                      show_masks=False,
+                      show_bbox=True,
                       colors=None):
     """
     boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates
-    masks: [num_persons, num_keypoints, height, width] one-hot bool masks
+    kp_masks: [num_persons, num_keypoints, height, width] one-hot bool kp_masks
     kp_ids (optional): A 1D array of keypoint IDs of the each mask
         [num_persons, num_keypoints]
     scores: (optional) confidence scores for each box
@@ -187,8 +189,8 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
     """
     
     # Number of instances
-    num_persons = masks.shape[0]
-    num_keypoints = masks.shape[1]
+    num_persons = kp_masks.shape[0]
+    num_keypoints = kp_masks.shape[1]
     if num_persons == 0:
         print("\n*** No instances to display *** \n")
         return
@@ -198,7 +200,7 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
         kp_ids = np.repeat(np.expand_dims(np.arange(1, num_keypoints+1), axis=0), num_persons, axis=0)
 
     # Verify sizes
-    assert masks.shape[0] == kp_ids.shape[0] == boxes.shape[0]
+    assert kp_masks.shape[0] == kp_ids.shape[0] == boxes.shape[0]
 
     # If no axis is passed, create one and automatically call show()
     auto_show = False
@@ -217,8 +219,9 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
     colors = colors or random_colors(num_persons)
 
     # Draw keypoints for each person
+    masked_image = image.astype(np.uint32).copy()
     for i in range(num_persons):
-        person_masks, person_kp_ids = masks[i], kp_ids[i]
+        person_masks, person_kp_ids = kp_masks[i], kp_ids[i]
         color = colors[i]
 
         # Draw person bbox
@@ -228,6 +231,11 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
                                 alpha=0.7, linestyle="dashed",
                                 edgecolor=color, facecolor='none')
             ax.add_patch(p)
+
+        # Mask
+        if show_masks:
+            mask = masks[:, :, i]
+            masked_image = apply_mask(masked_image, mask, color)
 
         # Draw keypoints
         if show_keypoints:
@@ -266,7 +274,7 @@ def display_keypoints(image, boxes, masks, kp_ids=None,
                                 bbox={'facecolor': color, 'alpha': 0.5,
                                         'pad': 2, 'edgecolor': 'none'})
 
-    ax.imshow(image)
+    ax.imshow(masked_image.astype(np.uint8))
     if auto_show:
         plt.show()
 
