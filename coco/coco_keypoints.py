@@ -215,7 +215,7 @@ class CocoDataset(utils.Dataset):
             print("... done unzipping")
         print("Will use annotations in " + annFile)
 
-    def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None):
+    def load_mask(self, image_id, scale=1.0, padding=[(0, 0), (0, 0), (0, 0)], crop=None, return_boxes=False):
         """
         Load instance masks and sparse kp masks for the given image.
 
@@ -231,6 +231,7 @@ class CocoDataset(utils.Dataset):
             a one-mask per keypoint.
         kp_ids: an array of shape [person_count, kp_count] of keypoint IDs
             of the each person's keypoints.
+        return_boxes: when true, returns boxes from annoations
         """
         if crop: raise Exception("Crop not supported")
 
@@ -245,6 +246,7 @@ class CocoDataset(utils.Dataset):
                      int(round(image_info["width"] * scale) + pad_left + pad_right))
 
         instance_masks = []
+        if return_boxes: instance_bboxes = []
         class_ids = []
         kp_masks = []
         kp_ids = []
@@ -288,6 +290,13 @@ class CocoDataset(utils.Dataset):
                             
                         instance_kp_masks.append(kp_mask)
                         instance_kp_ids.append(kp_id)
+
+                if return_boxes:
+                    # Get bounding box as [y1, x1, y2, x2] 
+                    x, y, w, h = annotation["bbox"]
+                    bbox = np.array([pad_top + y * scale, pad_left + x * scale, pad_top + (y + h) * scale, pad_left + (x + w) * scale])
+                    instance_bboxes.append(bbox)    
+                
                 kp_masks.append(instance_kp_masks)
                 kp_ids.append(instance_kp_ids)
                 instance_masks.append(m)
@@ -299,11 +308,17 @@ class CocoDataset(utils.Dataset):
             class_ids = np.array(class_ids, dtype=np.int32)
             kp_masks = np.array(kp_masks).astype(np.bool)
             kp_ids   = np.array(kp_ids)
+            if return_boxes:
+                instance_bboxes = np.stack(instance_bboxes, axis=0).astype(np.int32)
+                return mask, class_ids, kp_masks, kp_ids, instance_bboxes
             return mask, class_ids, kp_masks, kp_ids
         else:
             # Call super class to return an empty mask
             kp_masks = np.empty([0, 0, 0, 0])
             kp_ids   = np.empty([0], np.int32)
+            if return_boxes:
+                instance_bboxes = np.empty([0, 0])
+                return super(CocoDataset, self).load_mask(image_id), kp_masks, kp_ids, instance_bboxes
             return super(CocoDataset, self).load_mask(image_id), kp_masks, kp_ids
 
     def image_reference(self, image_id):

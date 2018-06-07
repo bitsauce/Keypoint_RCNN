@@ -1306,7 +1306,7 @@ def mrcnn_kp_mask_loss_graph(target_masks, target_kp_ids, pred_masks):
     pred_masks = tf.reshape(pred_masks, (N, mask_shape[3], mask_shape[4]))
 
     # Flatten predictions
-    # [N, height x width]
+    # [batch x num_rois x num_keypoints, height x width]
     y_pred = tf.reshape(pred_masks, (N, -1))
 
     # Gather valid predictions
