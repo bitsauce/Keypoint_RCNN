@@ -2208,8 +2208,9 @@ class MaskRCNN():
 
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox,
-                              mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
-                             name='mask_rcnn')
+                              mrcnn_mask, mrcnn_kp_masks,
+                              rpn_rois, rpn_class, rpn_bbox],
+                              name='mask_rcnn')
 
         # Add multi-GPU support.
         if config.GPU_COUNT > 1:
@@ -2544,7 +2545,7 @@ class MaskRCNN():
         windows = np.stack(windows)
         return molded_images, image_metas, windows
 
-    def unmold_detections(self, detections, mrcnn_mask, original_image_shape,
+    def unmold_detections(self, detections, mrcnn_mask, mrcnn_kp_masks, original_image_shape,
                           image_shape, window):
         """Reformats the detections of one image from the format of the neural
         network output to a format suitable for use in the rest of the
@@ -2552,6 +2553,7 @@ class MaskRCNN():
 
         detections: [N, (y1, x1, y2, x2, class_id, score)] in normalized coordinates
         mrcnn_mask: [N, height, width, num_classes]
+        mrcnn_kp_masks: [N, num_keypoints, height, width]
         original_image_shape: [H, W, C] Original image shape before resizing
         image_shape: [H, W, C] Shape of the image after resizing and padding
         window: [y1, x1, y2, x2] Pixel coordinates of box in the image where the real
@@ -2582,15 +2584,16 @@ class MaskRCNN():
         wh = wy2 - wy1  # window height
         ww = wx2 - wx1  # window width
         scale = np.array([wh, ww, wh, ww])
+
         # Convert boxes to normalized coordinates on the window
         boxes = np.divide(boxes - shift, scale)
+        
         # Convert boxes to pixel coordinates on the original image
         boxes = utils.denorm_boxes(boxes, original_image_shape[:2])
 
         # Filter out detections with zero area. Happens in early training when
         # network weights are still random
-        exclude_ix = np.where(
-            (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) <= 0)[0]
+        exclude_ix = np.where((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) <= 0)[0]
         if exclude_ix.shape[0] > 0:
             boxes = np.delete(boxes, exclude_ix, axis=0)
             class_ids = np.delete(class_ids, exclude_ix, axis=0)
@@ -2600,14 +2603,17 @@ class MaskRCNN():
 
         # Resize masks to original image size and set boundary threshold.
         full_masks = []
+        full_kp_masks = []
         for i in range(N):
             # Convert neural network mask to full size mask
             full_mask = utils.unmold_mask(masks[i], boxes[i], original_image_shape)
+            full_kp_mask = utils.unmold_kp_mask(mrcnn_kp_masks[i], boxes[i], original_image_shape)
             full_masks.append(full_mask)
-        full_masks = np.stack(full_masks, axis=-1)\
-            if full_masks else np.empty(masks.shape[1:3] + (0,))
+            full_kp_masks.append(full_kp_mask)
+        full_masks = np.stack(full_masks, axis=-1) if full_masks else np.empty(masks.shape[1:3] + (0,))
+        full_kp_masks = np.array(full_kp_masks) if full_kp_masks else np.empty(masks.shape[1:3] + (0,))
 
-        return boxes, class_ids, scores, full_masks, None, None
+        return boxes, class_ids, scores, full_masks, None, full_kp_masks
 
     def detect(self, images, verbose=0):
         """Runs the detection pipeline.
@@ -2651,7 +2657,7 @@ class MaskRCNN():
             log("anchors", anchors)
 
         # Run object detection
-        detections, _, _, mrcnn_mask, _, _, _ =\
+        detections, _, _, mrcnn_mask, mrcnn_kp_masks, _, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
 
         # Process detections
@@ -2660,6 +2666,7 @@ class MaskRCNN():
             final_rois, final_class_ids, final_scores, final_masks, final_kp_ids, final_kp_masks =\
                 self.unmold_detections(detections[i],
                                        mrcnn_mask[i],
+                                       mrcnn_kp_masks[i],
                                        image.shape,
                                        molded_images[i].shape,
                                        windows[i])
