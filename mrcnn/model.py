@@ -603,7 +603,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp_i
 
     # Flatten kp_masks
     # [N, NUM_KEYPOINTS]
-    mask_shape = tf.shape(kp_masks)
+    kp_mask_shape = tf.shape(kp_masks)
     if DEBUG: print("kp_masks.shape", kp_masks.shape)
 
     # [N x NUM_KEYPOINTS]
@@ -623,8 +623,8 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp_i
 
     # Reshape to per keypoint
     # [N, NUM_KEYPOINTS]
-    kps_y = tf.reshape(kps_y, (mask_shape[0], mask_shape[1],))
-    kps_x = tf.reshape(kps_x, (mask_shape[0], mask_shape[1],))
+    kps_y = tf.reshape(kps_y, (kp_mask_shape[0], kp_mask_shape[1],))
+    kps_x = tf.reshape(kps_x, (kp_mask_shape[0], kp_mask_shape[1],))
     if DEBUG: print("kps_x.shape", kps_x.shape)
 
     # Find box relative kp x, y
@@ -636,8 +636,8 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp_i
 
     # Calculate corresponding position in resized mask
     # [N, NUM_KEYPOINTS]
-    kps_y = tf.cast((kps_y / (boxes[:, 2] - boxes[:, 0])) * config.MASK_SHAPE[0], tf.int32)
-    kps_x = tf.cast((kps_x / (boxes[:, 3] - boxes[:, 1])) * config.MASK_SHAPE[1], tf.int32)
+    kps_y = tf.cast((kps_y / (boxes[:, 2] - boxes[:, 0])) * config.KEYPOINT_MASK_SHAPE[0], tf.int32)
+    kps_x = tf.cast((kps_x / (boxes[:, 3] - boxes[:, 1])) * config.KEYPOINT_MASK_SHAPE[1], tf.int32)
     if DEBUG: print("kps_x.shape", kps_x.shape)
 
     # [N, NUM_KEYPOINTS, (x, y)]
@@ -1053,8 +1053,7 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
     #x = KL.Permute([1, 4, 2, 3], name="mrcnn_mask")(x)
     return x
 
-def build_fpn_kp_mask_graph(rois, feature_maps, image_meta,
-                            pool_size, num_keypoints, train_bn=True):
+def build_fpn_kp_mask_graph(rois, feature_maps, image_meta, pool_size, num_keypoints, target_mask_size, train_bn=True):
     """
     Builds the computation graph of the kp mask head of Feature Pyramid Network.
 
@@ -1083,8 +1082,8 @@ def build_fpn_kp_mask_graph(rois, feature_maps, image_meta,
 
     # Generate num_keypoint masks
     x = KL.TimeDistributed(KL.Conv2DTranspose(num_keypoints, (2, 2), strides=2), name="mrcnn_kp_mask_deconv")(x)
-    x = KL.TimeDistributed(KL.Lambda(lambda z: tf.image.resize_bilinear(z, [28, 28])), name="mrcnn_kp_mask_upsample_1")(x)
-    #x = KL.TimeDistributed(KL.Lambda(lambda z: tf.image.resize_bilinear(z, [56, 56])), name="mrcnn_kp_mask_upsample_2")(x)
+    x = KL.TimeDistributed(KL.Lambda(lambda z: tf.image.resize_bilinear(z, [28, 28])), name="mrcnn_kp_mask_upsample1")(x)
+    x = KL.TimeDistributed(KL.Lambda(lambda z: tf.image.resize_bilinear(z, target_mask_size)), name="mrcnn_kp_mask_upsample2")(x)
     x = KL.Permute([1, 4, 2, 3], name="mrcnn_kp_mask")(x)
     return x
 
@@ -2142,8 +2141,9 @@ class MaskRCNN():
             # Key point masks head
             mrcnn_kp_masks = build_fpn_kp_mask_graph(rois, mrcnn_feature_maps,
                                                      input_image_meta,
-                                                     config.MASK_POOL_SIZE, # 7
+                                                     config.MASK_POOL_SIZE,
                                                      config.NUM_KEYPOINTS,
+                                                     config.KEYPOINT_MASK_SHAPE,
                                                      train_bn=config.TRAIN_BN)
 
             # TODO: clean up (use tf.identify if necessary)
@@ -2202,8 +2202,9 @@ class MaskRCNN():
             # Key point masks head
             mrcnn_kp_masks = build_fpn_kp_mask_graph(detection_boxes, mrcnn_feature_maps,
                                                      input_image_meta,
-                                                     config.MASK_POOL_SIZE, # 7
+                                                     config.MASK_POOL_SIZE,
                                                      config.NUM_KEYPOINTS,
+                                                     config.KEYPOINT_MASK_SHAPE,
                                                      train_bn=config.TRAIN_BN)
 
             model = KM.Model([input_image, input_image_meta, input_anchors],
@@ -2575,6 +2576,7 @@ class MaskRCNN():
         class_ids = detections[:N, 4].astype(np.int32)
         scores = detections[:N, 5]
         masks = mrcnn_mask[np.arange(N), :, :, class_ids]
+        kp_masks = mrcnn_kp_masks[:N]
 
         # Translate normalized coordinates in the resized image to pixel
         # coordinates in the original image before resizing
@@ -2599,6 +2601,7 @@ class MaskRCNN():
             class_ids = np.delete(class_ids, exclude_ix, axis=0)
             scores = np.delete(scores, exclude_ix, axis=0)
             masks = np.delete(masks, exclude_ix, axis=0)
+            kp_masks = np.delete(kp_masks, exclude_ix, axis=0)
             N = class_ids.shape[0]
 
         # Resize masks to original image size and set boundary threshold.
@@ -2607,11 +2610,11 @@ class MaskRCNN():
         for i in range(N):
             # Convert neural network mask to full size mask
             full_mask = utils.unmold_mask(masks[i], boxes[i], original_image_shape)
-            full_kp_mask = utils.unmold_kp_mask(mrcnn_kp_masks[i], boxes[i], original_image_shape)
+            full_kp_mask = utils.unmold_kp_mask(kp_masks[i], boxes[i], original_image_shape)
             full_masks.append(full_mask)
             full_kp_masks.append(full_kp_mask)
         full_masks = np.stack(full_masks, axis=-1) if full_masks else np.empty(masks.shape[1:3] + (0,))
-        full_kp_masks = np.array(full_kp_masks) if full_kp_masks else np.empty(masks.shape[1:3] + (0,))
+        full_kp_masks = np.array(full_kp_masks) if full_kp_masks else np.empty(kp_masks.shape[1:3] + (0,))
 
         return boxes, class_ids, scores, full_masks, None, full_kp_masks
 

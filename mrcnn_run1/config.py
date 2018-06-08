@@ -111,7 +111,6 @@ class Config(object):
     IMAGE_RESIZE_MODE = "square"
     IMAGE_MIN_DIM = 800
     IMAGE_MAX_DIM = 1024
-
     # Minimum scaling ratio. Checked after MIN_IMAGE_DIM and can force further
     # up scaling. For example, if set to 2 then images are scaled up to double
     # the width and height, or more, even if MIN_IMAGE_DIM doesn't require it.
@@ -138,9 +137,6 @@ class Config(object):
     # Shape of output mask
     # To change this you also need to change the neural network mask branch
     MASK_SHAPE = [28, 28]
-
-    # Shape of the target mask in keypoint detection
-    KEYPOINT_MASK_SHAPE = [56, 56]
 
     # Maximum number of ground truth instances to use in one image
     MAX_GT_INSTANCES = 100
