@@ -2676,7 +2676,7 @@ class MaskRCNN():
                 "scores": final_scores,
                 "masks": final_masks,
                 "kp_ids": None,
-                "kp_masks": None
+                "kp_masks": final_kp_masks
             })
         return results
 

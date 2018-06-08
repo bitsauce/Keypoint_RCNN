@@ -592,6 +592,8 @@ def unmold_kp_mask(kp_masks, bbox, image_shape):
     full_masks = []
     for i in range(kp_masks.shape[0]):
         kp_mask = kp_masks[i]
+        kp_mask -= np.min(kp_mask)
+        kp_mask /= np.max(kp_mask)
         kp_mask = skimage.transform.resize(kp_mask, (y2 - y1, x2 - x1), order=1, mode="constant")
 
         # Put the masks in the right location.
