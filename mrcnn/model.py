@@ -2025,7 +2025,6 @@ class MaskRCNN():
             # 5. GT Masks (zero padded)
             # [batch, MAX_GT_INSTANCES, NUM_KEYPOINTS]
             input_gt_kp_masks = KL.Input(shape=[None, config.NUM_KEYPOINTS], name="input_gt_kp_masks", dtype=tf.int32)
-
         elif mode == "inference":
             # Anchors in normalized coordinates
             input_anchors = KL.Input(shape=[None, 4], name="input_anchors")
@@ -2200,9 +2199,16 @@ class MaskRCNN():
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
 
+            # Key point masks head
+            mrcnn_kp_masks = build_fpn_kp_mask_graph(detection_boxes, mrcnn_feature_maps,
+                                                     input_image_meta,
+                                                     config.MASK_POOL_SIZE, # 7
+                                                     config.NUM_KEYPOINTS,
+                                                     train_bn=config.TRAIN_BN)
+
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox,
-                                 mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
+                              mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
@@ -2615,8 +2621,7 @@ class MaskRCNN():
         masks: [H, W, N] instance binary masks
         """
         assert self.mode == "inference", "Create model in inference mode."
-        assert len(
-            images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
+        assert len(images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
 
         if verbose:
             log("Processing {} images".format(len(images)))
@@ -2635,6 +2640,7 @@ class MaskRCNN():
 
         # Anchors
         anchors = self.get_anchors(image_shape)
+        
         # Duplicate across the batch dimension because Keras requires it
         # TODO: can this be optimized to avoid duplicating the anchors?
         anchors = np.broadcast_to(anchors, (self.config.BATCH_SIZE,) + anchors.shape)
@@ -2643,21 +2649,27 @@ class MaskRCNN():
             log("molded_images", molded_images)
             log("image_metas", image_metas)
             log("anchors", anchors)
+
         # Run object detection
         detections, _, _, mrcnn_mask, _, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
+
         # Process detections
         results = []
         for i, image in enumerate(images):
-            final_rois, final_class_ids, final_scores, final_masks =\
-                self.unmold_detections(detections[i], mrcnn_mask[i],
-                                       image.shape, molded_images[i].shape,
+            final_rois, final_class_ids, final_scores, final_masks, final_kp_ids, final_kp_masks =\
+                self.unmold_detections(detections[i],
+                                       mrcnn_mask[i],
+                                       image.shape,
+                                       molded_images[i].shape,
                                        windows[i])
             results.append({
                 "rois": final_rois,
                 "class_ids": final_class_ids,
                 "scores": final_scores,
                 "masks": final_masks,
+                "kp_ids": None,
+                "kp_masks": None
             })
         return results
 
