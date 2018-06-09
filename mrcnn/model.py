@@ -2679,7 +2679,8 @@ class MaskRCNN():
                 "scores": final_scores,
                 "masks": final_masks,
                 "kp_ids": None,
-                "kp_masks": final_kp_masks
+                "kp_masks": final_kp_masks,
+                "roi_kp_masks": mrcnn_kp_masks
             })
         return results
 
