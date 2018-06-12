@@ -1,0 +1,423 @@
+\documentclass[10pt,onecolumn,letterpaper]{article}
+
+\setlength{\textheight}{8.875in}
+\setlength{\textwidth}{6.875in}
+\setlength{\columnsep}{0.3125in}
+\setlength{\topmargin}{0in}
+\setlength{\headheight}{0in}
+\setlength{\headsep}{0in}
+\setlength{\parindent}{1pc}
+\setlength{\oddsidemargin}{-.304in}
+\setlength{\evensidemargin}{-.304in}
+
+\usepackage{times}
+\usepackage{epsfig}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{wrapfig}
+\usepackage{lscape}
+\usepackage{datetime}
+
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\usepackage[breaklinks=true,bookmarks=false]{hyperref}
+\def\httilde{\mbox{\tt\raisebox{-.5ex}{\symbol{126}}}}
+
+\begin{document}
+
+% TITLE
+\title{Benchmarking and Error Diagnosis in Multi-Instance Pose Estimation\footnote{Code available at: \texttt{https://github.com/matteorr/coco-analyze}}\\
+Automatically Generated Evaluation Report\\[1.5ex]
+\textbf{Team Name:}  \texttt{\detokenize{pose_rcnn}}\\[1.5ex]
+\textbf{Version:}    \texttt{\detokenize{v1}}\\[1.5ex]
+\textbf{Split Name:} \texttt{\detokenize{A:\Programming\DeepLearningDatasets\coco\annotations\person_keypoints_val2017.json}}}
+\date{\today - \currenttime}
+\maketitle
+
+% SECTIONS
+
+% HUMAN SKELETON COLOR CODING
+\section{Human Pose and Skeleton Color Coding}
+\begin{wrapfigure}{l}{0.5\textwidth}
+\includegraphics[width=\linewidth]{./latex/color_coding.pdf}
+\caption{ {\small \textbf{Detection's Skeleton Color Coding.}}}
+\end{wrapfigure}
+We adopt the following color coding when visualizing an algorithm's keypoint detections:
+\begin{itemize}
+    \item The location of the left and right parts of the body is indicated respectively with red and green dots; the location of the nose is plotted in blue.%following the standard used for vessel and aircraft navigation lights
+    \item Face keypoints (\textit{nose}, \textit{eyes}, \textit{ears}) are connected by purple lines.
+    \item Upper-body keypoints (\textit{shoulders}, \textit{elbows}, \textit{wrists}) are connected by blue lines.
+    \item Torso keypoints (\textit{shoulders}, \textit{hips}) are connected by yellow lines.
+    \item Lower-body keypoints (\textit{hips}, \textit{knees}, \textit{ankles}) are connected by brown lines.
+\end{itemize}
+\clearpage
+
+% OVERALL DETECTOR PERFORMANCE
+\section{Overall Detector Characteristics}
+\begin{itemize}
+    \item \textbf{Num. Detections:} 38781
+    \item \textbf{Num. Images [with Detections]:} 5000 [2685]
+\end{itemize}
+\vspace{-5mm}
+\begin{figure}[h!]
+\centering
+\begin{subfigure}{.4\linewidth}
+\centering
+\includegraphics[width=\linewidth]{.\results/prc_[pose_rcnn][medium][20].pdf}
+\label{fig:sub1}
+\end{subfigure}%
+\begin{subfigure}{.4\linewidth}
+\centering
+\includegraphics[width=\linewidth]{.\results/prc_[pose_rcnn][large][20].pdf}
+\label{fig:sub2}
+\end{subfigure}\\[1ex]
+\begin{subfigure}{\linewidth}
+\centering
+\includegraphics[width=.4\linewidth]{.\results/prc_[pose_rcnn][all][20].pdf}
+\label{fig:sub3}
+\end{subfigure}
+\vspace{-3mm}
+\caption{ {\small \textbf{Precision Recall Curves at all OKS thresholds and area ranges.} }}
+\label{fig:test}
+\end{figure}
+
+% AP IMPROVEMENT SECTION
+\vspace{-5mm}
+\section{Error Impact on AP}
+\vspace{-3mm}
+\begin{figure}[h!]
+\centering
+\begin{tabular}{cc}
+\includegraphics[width=.35\linewidth]{.\results/AP_improvement/ap_improv_areas_all.pdf} &
+\includegraphics[width=.3\linewidth]{.\results/AP_improvement/ap_improv_oks.pdf}\\
+\end{tabular}
+\caption{ {\small \textbf{AP Improvement.} The AP improvement after errors of each type are completely removed,
+(Left) averaged over all OKS evaluation thresholds at the area range including all detections;
+(Right) averaged across area ranges at all OKS evaluation thresholds.
+The value of .85 OKS represents the threshold above which also human annotators have a significant disagreement (around 30\%) in estimating the correct position of a keypoint.}}
+\end{figure}
+
+\clearpage
+
+% LOCALIZATION ERRORS SECTION
+\section{Localization Errors}
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{ccc}
+\raisebox{15mm}{\multirow{2}{*}{\includegraphics[width=.2\linewidth]{.\results/localization_errors/keypoints_breakdown/overall_keypoint_errors.pdf}}} &
+\includegraphics[width=.35\linewidth]{.\results/localization_errors/keypoints_breakdown/Miss_kpt_breakdown.pdf}  & \includegraphics[width=.35\linewidth]{.\results/localization_errors/keypoints_breakdown/Jitter_kpt_breakdown.pdf}\\
+ &
+\includegraphics[width=.35\linewidth]{.\results/localization_errors/keypoints_breakdown/Inversion_kpt_breakdown.pdf}  & \includegraphics[width=.35\linewidth]{.\results/localization_errors/keypoints_breakdown/Swap_kpt_breakdown.pdf} \\
+\end{tabular}
+}
+\caption{ {\small \textbf{Predicted Keypoint Analysis.}
+(Left) The overall percentage of the algorithm's predicted keypoints that are good or have a localization error.
+(Right) Breakdown of the localization errors over keypoint types.}}
+\end{figure}
+
+\begin{wrapfigure}{l}{0.5\textwidth}
+\includegraphics[width=\linewidth]{.\results/localization_errors/keypoints_breakdown/keypoint_breakdown.pdf}
+\caption{ {\small \textbf{Human Keypoint Breakdown.} The frequency of each localization error for every keypoint of the human body.}}
+\end{wrapfigure}
+
+Localization Errors Taxonomy:
+\begin{itemize}
+\item \textbf{Jitter:} small error around the correct keypoint location.
+
+\item \textbf{Miss:} large localization error, the detected keypoint is not within the proximity of any body part.
+
+\item \textbf{Inversion:} confusion between semantically similar parts belonging to the same instance. The detection is in the proximity of the true keypoint location of the wrong body part.
+
+\item \textbf{Swap:} confusion between semantically similar parts of different instances. The detection is within the proximity of a body part belonging to a different person.
+
+\end{itemize}
+
+\clearpage
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{c|c|c|c}
+\hline
+\textbf{Miss} & \textbf{Swap} &  \textbf{Inversion} & \textbf{Jitter} \\[.75ex]
+\hline\hline
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/miss_0.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/swap_0.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/inversion_0.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/jitter_0.pdf} \\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/miss_1.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/swap_1.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/inversion_1.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/jitter_1.pdf} \\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/miss_2.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/swap_2.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/inversion_2.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/jitter_2.pdf} \\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/miss_3.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/swap_3.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/inversion_3.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/jitter_3.pdf} \\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/miss_4.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/swap_4.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/inversion_4.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/jitter_4.pdf} \\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/miss_5.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/swap_5.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/inversion_5.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/jitter_5.pdf} \\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/miss_6.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/swap_6.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/inversion_6.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/localization_errors/keypoints_breakdown/jitter_6.pdf} \\
+\end{tabular}
+}
+\vspace{-4mm}
+\caption{ {\small \textbf{Top Localization Errors.} The detections with the highest number of localization errors of each type.
+The color coding of the detection skeleton is described in Sec. 1. Each image title contains the following information:
+[image\textunderscore id, detection\textunderscore id, detection\textunderscore score, number\textunderscore of\textunderscore errors].
+Errors in the COCO annotations might cause good detections to appear in the above examples.}}
+\end{figure}
+
+\clearpage
+
+% SCORING ERRORS SECTION
+\section{Scoring Errors}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=.5\linewidth]{.\results/scoring_errors/error_prc_[scoring][75][all][20].pdf}
+\caption{ {\small \textbf{Optimal Score Precision Recall Curve.}
+The PRC using the original detections, and the improvement obtained (blue area) when using the optimal score.}}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{ccc}
+\includegraphics[width=.25\linewidth]{.\results/scoring_errors/num_dts_high_oks.pdf} &
+\includegraphics[width=.25\linewidth]{.\results/scoring_errors/dts_ori_score_hist.pdf} &
+\includegraphics[width=.25\linewidth]{.\results/scoring_errors/dts_opt_score_hist.pdf}\\
+\end{tabular}
+}
+\caption{{\small \textbf{Detection Scores Analysis.} We compute the following quantities over all ground-truth instances:
+(Left) The histogram of the number of detections having an OKS $>.1$ with a given ground-truth. The histogram of detections'
+(Center) original and (Right) optimal confidence scores. We plot separately the detections achieving the maximum OKS with a
+given ground-truth instance (continuous line) and the other detections achieving OKS of at least .1 (dashed line);
+in red we highlight how many detections have high OKS and low score and vice versa. A bimodal distribution of confidence scores for detections
+obtaining high OKS versus low OKS, large separation between the means and a small count of red detections are indication of an overall better score.}}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{cc|cc}
+\hline\hline
+\textbf{High Score - Low OKS} & \textbf{Low Score - High OKS} & \textbf{High Score - Low OKS} & \textbf{Low Score - High OKS}\\
+\hline
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_0_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_0_high_oks.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_6_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_6_high_oks.pdf}\\
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_1_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_1_high_oks.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_7_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_7_high_oks.pdf}\\
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_2_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_2_high_oks.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_8_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_8_high_oks.pdf}\\
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_3_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_3_high_oks.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_9_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_9_high_oks.pdf}\\
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_4_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_4_high_oks.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_10_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_10_high_oks.pdf}\\
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_5_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_5_high_oks.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_11_high_score.pdf} &
+\includegraphics[width=.2\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/scoring_errors/score_err_11_high_oks.pdf}\\
+\end{tabular}
+}
+\vspace{-3mm}
+\caption{ {\small \textbf{Top Scoring Errors.} Scoring errors ordered by relevance top to bottom and left to right.
+Each scoring error consists of a ground-truth annotation and a pair of detections shown side by side, one with high score and low OKS (left),
+and one with low score and high OKS (right).
+The relevance is computed as the geometric mean between the difference of the OKS obtained
+by the two detections and the difference of their confidence score.
+The ground truth skeleton is in green, and the color coding of the detection skeleton is described in Sec. 1.
+Each image title contains the following information:
+[detection\textunderscore score, OKS, image\textunderscore id, ground\textunderscore truth\textunderscore id, detection\textunderscore id].}}
+\end{figure}
+\clearpage
+
+% BACKGROUND FALSE POSITIVES SECTION
+\section{Background False Positives}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=.25\linewidth]{.\results/background_errors/false_positives/bckd_false_pos_scores_histogram.pdf}
+\vspace{-3mm}
+\caption{ {\small \textbf{Histogram of Scores.} Histogram of the confidence scores of all Background False Positives
+errors. The problematic cases are those with a score falling in the highest percentile of the overall detection scores (rightmost bin).}}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\begin{tabular}{ccc}
+\includegraphics[width=.2\linewidth]{.\results/background_errors/false_positives/bckd_false_pos_bbox_aspect_ratio_3.pdf} &
+\includegraphics[width=.2\linewidth]{.\results/background_errors/false_positives/bckd_false_pos_area_histogram.pdf} &
+\includegraphics[width=.2\linewidth]{.\results/background_errors/false_positives/bckd_false_pos_num_people_histogram.pdf}\\
+\end{tabular}
+\vspace{-2mm}
+\caption{ {\small \textbf{High Score Background False Positives Analysis.} (Left) Heatmap showing the most frequent Bounding Box Aspect Ratios;
+(Center) Histogram of the area sizes; (Right) Histogram of the number of people in an image with False Positives.
+The above plots are computed for the subset of Background False Positives having confidence score in the top-20th percentile of overall scores
+(rightmost bin in the previous Figure).}}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{cc|cc}
+\hline
+\multicolumn{2}{c}{\textbf{High Score}} & \multicolumn{2}{c}{\textbf{Low Score}} \\[.75ex]
+\hline\hline
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_0.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_1.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_4.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_5.pdf}\\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_2.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_3.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_6.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_positives/bckd_false_pos_7.pdf}\\
+\end{tabular}
+}
+\vspace{-3mm}
+\caption{ {\small \textbf{False Positive Errors.}
+Errors in the COCO annotations might cause good detections to appear in the above examples.}}
+\end{figure}
+\clearpage
+
+% BACKGROUND FALSE NEGATIVES SECTION
+\section{False Negatives}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=.25\linewidth]{.\results/background_errors/false_negatives/bckd_false_neg_heatmaps.pdf}
+\caption{ {\small \textbf{Background False Negatives Heatmap.} Heatmap of the segmentation masks of all Background False Negatives.}}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{cccc}
+\includegraphics[width=.2\linewidth]{.\results/background_errors/false_negatives/bckd_false_neg_bbox_aspect_ratio_3.pdf} &
+\includegraphics[width=.2\linewidth]{.\results/background_errors/false_negatives/bckd_false_neg_num_keypoints_histogram.pdf} &
+\includegraphics[width=.2\linewidth]{.\results/background_errors/false_negatives/bckd_false_neg_bbox_area_hist.pdf} &
+\includegraphics[width=.2\linewidth]{.\results/background_errors/false_negatives/bckd_false_neg_num_people_histogram.pdf}\\
+\end{tabular}
+}
+\caption{ {\small \textbf{Background False Negatives Analysis.} (Left) Heatmap showing the most frequent Bounding Box Aspect Ratios;
+(Center-Left) Histogram of the number of visible keypoints;
+(Center-Right) Histogram of the area sizes; (Right) Histogram of the number of people in an image with False Negatives.}}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{cc|cc}
+\hline
+\multicolumn{2}{c}{\textbf{High Num. Keypoints}} & \multicolumn{2}{c}{\textbf{Low Num. Keypoints}} \\[.75ex]
+\hline\hline
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_0.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_1.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_4.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_5.pdf}\\
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_2.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_3.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_6.pdf} &
+\includegraphics[width=.25\linewidth,height=.15\paperwidth,keepaspectratio]{.\results/background_errors/false_negatives/bckd_false_neg_7.pdf}\\
+\end{tabular}
+}
+\caption{ {\small \textbf{False Negative Errors.}}}
+\end{figure}
+\clearpage
+
+% SENSITIVITY TO OCCLUSION AND CROWDING SECTION
+% SECTIONS
+\section{Performance and Error Sensitivity to Occlusion and Crowding}
+\vspace{-3mm}
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{cccc}
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[0-0][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[0-1][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[0-2][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[0-3][75][all][20].pdf}\\
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[1-0][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[1-1][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[1-2][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[1-3][75][all][20].pdf}\\
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[2-0][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[2-1][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[2-2][75][all][20].pdf} &
+\includegraphics[width=.22\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/error_prc_[2-3][75][all][20].pdf}\\
+\end{tabular}
+}
+\caption{ {\small \textbf{Performance Sensitivity.} We separate the ground-truth instances in COCO into twelve benchmarks, based on number of visible keypoints (occlusion)
+and overlap between annotations (crowding), more details are discussed in the Main Paper. We show the Precision Recall Curves with individual errors breakdown
+obtained by evaluating performance separately on each benchmark. The last row is computed on few instances (since these hard examples are under-represented in COCO),
+therefore results may have high variance.}}
+\end{figure}
+\vspace{-3mm}
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{ccc}
+\includegraphics[width=.3\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/benchmark_instances.pdf} &
+\includegraphics[width=.3\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/miss_benchmark.pdf}  & \includegraphics[width=.3\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/swap_benchmark.pdf}\\
+\includegraphics[width=.3\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/benchmark_keypoints.pdf} &
+\includegraphics[width=.3\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/inversion_benchmark.pdf}  & \includegraphics[width=.3\linewidth]{.\results/benchmarks_sensitivity/occlusion_crowding/jitter_benchmark.pdf} \\
+\end{tabular}
+}
+\caption{ {\small \textbf{Localization Error Sensitivity}. (Left Column) The total number of ground-truth instances (top) and keypoints (bottom) present
+ in each Occlusion and Crowding benchmark; (Center and Right Columns) The percentage of localization errors present in the algorithm's detections for each Occlusion and Crowding benchmark.}}
+\end{figure}
+\clearpage
+
+% SENSITIVITY TO INSTANCE SIZE SECTION
+%SECTIONS
+\section{Performance and Error Sensitivity to Instance Size}
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=.25\linewidth]{.\results/benchmarks_sensitivity/size/size_benchmarks.pdf}
+\caption{ {\small \textbf{Instance Size Benchmarks.} We separate the ground-truth instances in COCO into four benchmarks, based on the area size (measured in pixels),
+more details are discussed in the Main Paper. We show the total number of ground-truth instances in each benchmark.}}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\resizebox{\linewidth}{!}{
+\begin{tabular}{cc}
+\includegraphics[width=.25\linewidth]{.\results/benchmarks_sensitivity/size/ap_sensitivity.pdf} &
+\includegraphics[width=.75\linewidth]{.\results/benchmarks_sensitivity/size/errors_sensitivity.pdf} \\
+\end{tabular}
+}
+\caption{ {\small \textbf{Sensitivity to Instance Size}.
+(Left) The AP of an algorithm when evaluating performance separately on each Size benchmark;
+(Right) The AP improvement when correcting each error type after separately evaluating on each of the Size benchmarks;
+a higher AP improvement means that an error is present in higher quantities (correcting it causes a greater AP improvement).
+The red dashed line show the performance when evaluating jointly on the instances of all Size benchmarks.}}
+\end{figure}
+
+
+\end{document}

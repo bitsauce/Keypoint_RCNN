@@ -34,7 +34,7 @@ from mrcnn import utils
 ############################################################
 
 def display_images(images, titles=None, cols=4, cmap=None, norm=None,
-                   interpolation=None):
+                   interpolation=None, figsize=(14, 14), fontsize=9):
     """Display the given set of images, optionally with titles.
     images: list or array of image tensors in HWC format.
     titles: optional. A list of titles to display with each image.
@@ -45,16 +45,17 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
     """
     titles = titles if titles is not None else [""] * len(images)
     rows = len(images) // cols + 1
-    plt.figure(figsize=(14, 14 * rows // cols))
+    fig = plt.figure(figsize=(figsize[0], figsize[1] * rows // cols))
     i = 1
     for image, title in zip(images, titles):
         plt.subplot(rows, cols, i)
-        plt.title(title, fontsize=9)
+        plt.title(title, fontsize=fontsize)
         plt.axis('off')
         plt.imshow(image.astype(np.uint8), cmap=cmap,
                    norm=norm, interpolation=interpolation)
         i += 1
     plt.show()
+    return fig
 
 
 def random_colors(N, bright=True):
@@ -205,7 +206,7 @@ def display_keypoints(image, boxes, kp_masks, kp_ids=None, masks=None,
     # If no axis is passed, create one and automatically call show()
     auto_show = False
     if not ax:
-        _, ax = plt.subplots(1, figsize=figsize)
+        fig, ax = plt.subplots(1, figsize=figsize)
         auto_show = True
 
     # Show area outside image boundaries.
@@ -277,6 +278,7 @@ def display_keypoints(image, boxes, kp_masks, kp_ids=None, masks=None,
     ax.imshow(masked_image.astype(np.uint8))
     if auto_show:
         plt.show()
+        return fig
 
 def display_differences(image,
                         gt_box, gt_class_id, gt_mask,
