@@ -18,7 +18,7 @@ After training for 40k iterations, the model predicts masks such these:
 
 ![Prediction Examples](doc/predicted_kps_examples.png)
 
-Here I have visualized the heatmaps of inset (f):
+Here I have visualized the heatmaps of inset (e):
 
 ![Heatmaps](doc/prediction_kp_heatmap_2063.png)
 
